@@ -561,13 +561,15 @@ func extractCore(zipPath, staging, version string, status func(Status)) error {
 	defer reader.Close()
 
 	root := ""
+	found := false
 	for _, entry := range reader.File {
 		if strings.HasSuffix(entry.Name, "MaaCore.dll") {
 			root = strings.TrimSuffix(entry.Name, "MaaCore.dll")
+			found = true
 			break
 		}
 	}
-	if root == "" {
+	if !found {
 		return errors.New("MaaCore.dll was not found in the archive")
 	}
 
@@ -578,7 +580,7 @@ func extractCore(zipPath, staging, version string, status func(Status)) error {
 			continue
 		}
 		relative := strings.TrimPrefix(entry.Name, root)
-		if relative == entry.Name {
+		if root != "" && relative == entry.Name {
 			continue
 		}
 		relative = strings.ReplaceAll(relative, "\\", "/")
@@ -609,13 +611,15 @@ func extractResource(zipPath, staging string, status func(Status)) error {
 	defer reader.Close()
 
 	root := ""
+	found := false
 	for _, entry := range reader.File {
 		if strings.HasSuffix(entry.Name, "resource/version.json") {
 			root = strings.TrimSuffix(entry.Name, "resource/version.json")
+			found = true
 			break
 		}
 	}
-	if root == "" {
+	if !found {
 		return errors.New("resource/version.json was not found in the archive")
 	}
 	_ = os.RemoveAll(staging)
@@ -625,7 +629,10 @@ func extractResource(zipPath, staging string, status func(Status)) error {
 			continue
 		}
 		relative := strings.TrimPrefix(entry.Name, root)
-		if relative == entry.Name || !strings.HasPrefix(relative, "resource/") {
+		if root != "" && relative == entry.Name {
+			continue
+		}
+		if !strings.HasPrefix(relative, "resource/") {
 			continue
 		}
 		relative = strings.TrimPrefix(relative, "resource/")

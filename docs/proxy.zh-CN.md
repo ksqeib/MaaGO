@@ -13,9 +13,11 @@ MaaGO 已经内置更新器：
 “设置 → 更新 → 代理与下载”：
 
 1. 打开“启用 HTTP 代理”
-2. 填写 `http://127.0.0.1:7890`
+2. 填写 `http://127.0.0.1:7890`、`socks5://127.0.0.1:7890` 或 `socks5h://127.0.0.1:7890`
 3. 点“测试代理”
 4. 再执行“检查更新 / 下载并安装核心 / 更新资源”
+
+应用内使用 Go 的 HTTP Transport，支持 `http`、`https`、`socks5`、`socks5h`。
 
 ### 命令行脚本
 
@@ -34,7 +36,7 @@ MaaGO 的 PowerShell 脚本使用 `-Proxy`，支持 HTTP/HTTPS 代理：
 .\scripts\update-core.ps1 -Version 6.20.1 -Proxy "http://127.0.0.1:7890"
 ```
 
-> PowerShell 的 `-Proxy` 不直接支持 SOCKS5。若只有 SOCKS5，请让代理软件同时开启 HTTP 端口，或使用支持 SOCKS5 的 Git 配置。
+> PowerShell 的 `-Proxy` 不直接支持 SOCKS5。若只有 SOCKS5，使用应用内代理，或让代理软件同时开启 HTTP 端口。
 
 ## 2. 环境变量
 
