@@ -1,0 +1,74 @@
+{
+  "nav": {
+    "home": "首页",
+    "tasks": "任务",
+    "logs": "日志",
+    "settings": "设置",
+    "about": "关于",
+    "back": "返回",
+    "forward": "前进",
+    "breadcrumb": "当前位置"
+  },
+  "common": {
+    "app_name": "MaaGO",
+    "coming_soon": "页面骨架已就位，功能将在确认保留项后接入。",
+    "loading": "加载中…",
+    "version": "版本"
+  },
+  "theme": {
+    "toggle": "切换主题",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统"
+  },
+  "window": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭"
+  },
+  "home": {
+    "title": "MaaGO",
+    "subtitle": "基于 Go + Wails v3 + React 的 MAA 桌面客户端",
+    "ready_title": "基础结构已就绪",
+    "ready_body": "窗口外壳、侧边导航、主题切换、多语言、配置持久化都已经配置完成。",
+    "next_title": "下一步",
+    "next_body": "确认需要保留的 MAA 功能后，再逐个补齐页面和后台服务。",
+    "stack": "技术栈",
+    "stack_value": "Go 1.25 · Wails v3 · React 19 · HeroUI · Tailwind CSS v4"
+  },
+  "tasks": {
+    "title": "任务",
+    "subtitle": "MAA 任务队列将在这里配置与运行。"
+  },
+  "logs": {
+    "title": "日志",
+    "subtitle": "运行日志、截图与调试信息将在这里展示。"
+  },
+  "settings": {
+    "title": "设置",
+    "subtitle": "外观与基础选项",
+    "appearance": "外观",
+    "theme": "主题",
+    "language": "语言",
+    "layout": "导航布局",
+    "layout_sidebar": "侧边栏",
+    "layout_navbar": "顶部栏",
+    "language_zh": "简体中文",
+    "language_en": "English",
+    "saved_locally": "当前设置保存在浏览器本地，后续会接入 Go 配置。"
+  },
+  "about": {
+    "title": "关于",
+    "subtitle": "构建信息与项目说明",
+    "version": "应用版本",
+    "stack": "技术栈",
+    "runtime": "运行环境",
+    "data_dir": "数据目录",
+    "data_dir_value": "%APPDATA%\\MaaGO",
+    "open_data_dir": "打开数据目录",
+    "upstream": "上游项目",
+    "upstream_value": "MaaAssistantArknights",
+    "note": "本项目为非官方桌面客户端，仅使用 MAA 的公开能力。"
+  }
+}

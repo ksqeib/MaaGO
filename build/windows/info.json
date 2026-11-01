@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.1.0"
+	},
+	"info": {
+		"0000": {
+			"ProductVersion": "0.1.0",
+			"CompanyName": "MaaGO",
+			"FileDescription": "MaaAssistantArknights desktop companion",
+			"LegalCopyright": "(c) 2026, MaaGO contributors",
+			"ProductName": "MaaGO",
+			"Comments": ""
+		}
+	}
+}

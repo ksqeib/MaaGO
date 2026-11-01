@@ -1,0 +1,221 @@
+@import "tailwindcss";
+@import "./heroui.css";
+
+@font-face {
+  font-family: "MiSans";
+  src: url("./assets/fonts/MiSans-Medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: "MiSans", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI",
+    sans-serif;
+
+  --color-brand-50: rgb(var(--theme-50));
+  --color-brand-100: rgb(var(--theme-100));
+  --color-brand-200: rgb(var(--theme-200));
+  --color-brand-300: rgb(var(--theme-300));
+  --color-brand-400: rgb(var(--theme-400));
+  --color-brand-500: rgb(var(--theme-500));
+  --color-brand-600: rgb(var(--theme-600));
+  --color-brand-700: rgb(var(--theme-700));
+  --color-brand-800: rgb(var(--theme-800));
+  --color-brand-900: rgb(var(--theme-900));
+  --color-brand-950: rgb(var(--theme-950));
+  --color-brand: rgb(var(--theme-500));
+
+  --color-surface: var(--surface);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-tertiary: var(--surface-tertiary);
+  --color-surface-quaternary: var(--surface-quaternary);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+}
+
+@variant dark (&:is(.dark *));
+
+/* The palette is application-owned; neutral UI is expressed through these
+   semantic tokens and can be retinted from one place later. */
+:root,
+.light {
+  --theme-50: 236 253 245;
+  --theme-100: 209 250 229;
+  --theme-200: 167 243 208;
+  --theme-300: 110 231 183;
+  --theme-400: 52 211 153;
+  --theme-500: 16 185 129;
+  --theme-600: 5 150 105;
+  --theme-700: 4 120 87;
+  --theme-800: 6 95 70;
+  --theme-900: 6 78 59;
+  --theme-950: 2 44 34;
+
+  --background: #f8fafc;
+  --foreground: #27272a;
+  --muted: #52525b;
+  --surface: #ffffff;
+  --border: #e4e4e7;
+  --overlay: #ffffff;
+  --accent: rgb(var(--theme-600));
+  --accent-hover: rgb(var(--theme-700));
+  --accent-foreground: #ffffff;
+  --default: #f4f4f5;
+  --default-hover: #e4e4e7;
+  --field-background: #fafafa;
+  --focus: rgb(var(--theme-600));
+}
+
+.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --muted: #a1a1aa;
+  --surface: #18181b;
+  --border: #27272a;
+  --overlay: #18181b;
+  --accent: rgb(var(--theme-500));
+  --accent-hover: rgb(var(--theme-400));
+  --accent-foreground: #09090b;
+  --default: #27272a;
+  --default-hover: #3f3f46;
+  --field-background: #202023;
+  --focus: rgb(var(--theme-400));
+}
+
+@layer components {
+  .button,
+  .pagination__link {
+    @apply rounded-full;
+  }
+  .card {
+    padding: 0;
+    gap: 0;
+  }
+  .card__content {
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem;
+  }
+  .card__header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0.75rem;
+  }
+}
+
+body,
+html,
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-sans);
+}
+
+body,
+html {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:is(main, [role="dialog"], [role="alertdialog"]) :is(p, pre, code),
+[role="alert"],
+[role="status"],
+.select-text {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+#wails-draggable,
+.wails-draggable {
+  --wails-draggable: drag;
+}
+
+.wails-no-drag {
+  --wails-draggable: no-drag;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-clip: padding-box;
+  background-color: rgba(113, 113, 122, 0.35);
+  border: 3px solid transparent;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(113, 113, 122, 0.55);
+}
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(161, 161, 170, 0.25);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(161, 161, 170, 0.45);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Surfaces ----------------------------------------------------------------- */
+
+.app-backdrop {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.launcher-glass {
+  background-color: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+.launcher-chrome {
+  background-color: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.launcher-material-panel {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* The top bar and side rail share one L-shaped backdrop with a rounded inner
+   corner, which keeps the shell visually joined without nesting blur layers. */
+.launcher-navigation-frame {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.launcher-navigation-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: color-mix(in srgb, var(--border) 55%, transparent);
+}

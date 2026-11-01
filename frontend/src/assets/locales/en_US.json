@@ -1,0 +1,74 @@
+{
+  "nav": {
+    "home": "Home",
+    "tasks": "Tasks",
+    "logs": "Logs",
+    "settings": "Settings",
+    "about": "About",
+    "back": "Back",
+    "forward": "Forward",
+    "breadcrumb": "Breadcrumb"
+  },
+  "common": {
+    "app_name": "MaaGO",
+    "coming_soon": "The page shell is ready. Features will be added once the kept set is confirmed.",
+    "loading": "Loading…",
+    "version": "Version"
+  },
+  "theme": {
+    "toggle": "Toggle theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
+  },
+  "home": {
+    "title": "MaaGO",
+    "subtitle": "A MAA desktop client built with Go, Wails v3 and React",
+    "ready_title": "Base structure is ready",
+    "ready_body": "Window shell, side navigation, theme switching, localization and config persistence are configured.",
+    "next_title": "Next step",
+    "next_body": "Decide which MAA features to keep, then fill in pages and services one by one.",
+    "stack": "Stack",
+    "stack_value": "Go 1.25 · Wails v3 · React 19 · HeroUI · Tailwind CSS v4"
+  },
+  "tasks": {
+    "title": "Tasks",
+    "subtitle": "The MAA task queue will be configured and run here."
+  },
+  "logs": {
+    "title": "Logs",
+    "subtitle": "Runtime logs, screenshots and diagnostics will be shown here."
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Appearance and basic options",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "language": "Language",
+    "layout": "Navigation layout",
+    "layout_sidebar": "Sidebar",
+    "layout_navbar": "Top bar",
+    "language_zh": "简体中文",
+    "language_en": "English",
+    "saved_locally": "Settings are stored locally for now and will move to the Go config later."
+  },
+  "about": {
+    "title": "About",
+    "subtitle": "Build information and project notes",
+    "version": "Application version",
+    "stack": "Stack",
+    "runtime": "Runtime",
+    "data_dir": "Data directory",
+    "data_dir_value": "%APPDATA%\\MaaGO",
+    "open_data_dir": "Open data directory",
+    "upstream": "Upstream",
+    "upstream_value": "MaaAssistantArknights",
+    "note": "This is an unofficial desktop client and only uses MAA's public capabilities."
+  }
+}

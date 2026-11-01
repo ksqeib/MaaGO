@@ -1,0 +1,21 @@
+# Build output
+/bin/
+*.exe
+*.syso
+
+# Frontend
+/frontend/node_modules/
+/frontend/dist/
+/frontend/bindings/
+/frontend/.vite/
+
+# Go
+*.test
+*.out
+/.task/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea
+
