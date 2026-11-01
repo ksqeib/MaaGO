@@ -13,7 +13,7 @@ export const i18nReady = i18n
       zh_CN: { translation: zhCN },
       en_US: { translation: enUS },
     },
-    fallbackLng: "en_US",
+    fallbackLng: "zh_CN",
     supportedLngs: ["zh_CN", "zh-CN", "zh", "en_US", "en-US", "en"],
     nonExplicitSupportedLngs: true,
     detection: {

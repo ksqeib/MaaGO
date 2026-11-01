@@ -24,7 +24,7 @@ const bootstrap = async () => {
       <React.StrictMode>
         <ThemeProvider
           attribute="class"
-          defaultTheme="light"
+          defaultTheme="system"
           enableSystem
           storageKey="maago.theme"
         >

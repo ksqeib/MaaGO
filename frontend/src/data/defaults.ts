@@ -1,0 +1,73 @@
+import { defaultTasks } from "@/data/tasks";
+import type { AppConfig } from "@/types/maa";
+
+export const DEFAULT_CONFIG: AppConfig = {
+  configVersion: 2,
+  windowWidth: 1100,
+  windowHeight: 720,
+  windowMaximised: false,
+  minimizeToTray: true,
+  closeToTray: true,
+  theme: "system",
+  accentColor: "#10b981",
+  language: "zh_CN",
+  layout: "sidebar",
+  connection: {
+    mode: "adb",
+    address: "",
+    adbPath: "",
+    autoDetect: true,
+    emulator: "auto",
+    touchMode: "minitouch",
+    screenshotEnhance: false,
+    clientType: "Official",
+  },
+  run: {
+    clientType: "Official",
+    blockSleep: true,
+    keepScreenOn: false,
+    runDurationMinutes: 0,
+    postAction: "none",
+    postActionOnlyWhenNoOther: false,
+    postActionSkipOnError: false,
+  },
+  schedule: {
+    enabled: false,
+    time: "04:00",
+    weekdays: [1, 2, 3, 4, 5, 6, 7],
+    force: false,
+    notifyBefore: true,
+    notifyMinutes: 10,
+    lastTriggered: "",
+    lastNotified: "",
+  },
+  notification: {
+    systemEnabled: true,
+    onComplete: true,
+    onError: true,
+    onSchedule: true,
+  },
+  tasks: defaultTasks(),
+  lastRun: {
+    startedAt: "",
+    finishedAt: "",
+    status: "idle",
+    durationSeconds: 0,
+    completedTasks: 0,
+    totalTasks: 0,
+  },
+};
+
+export const DEFAULT_RUN_STATE = {
+  status: "idle",
+  currentTaskId: "",
+  currentTaskName: "",
+  completed: 0,
+  total: 0,
+  progress: 0,
+  startedAt: "",
+  finishedAt: "",
+  lastError: "",
+  message: "",
+  demo: true,
+} as const;

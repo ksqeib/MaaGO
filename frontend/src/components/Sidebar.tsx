@@ -3,13 +3,7 @@ import { motion } from "framer-motion";
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router-dom";
-import {
-  FaCog,
-  FaInfoCircle,
-  FaListUl,
-  FaRocket,
-  FaScroll,
-} from "react-icons/fa";
+import { FaCog, FaInfoCircle, FaListUl, FaRocket, FaScroll } from "react-icons/fa";
 
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { ROUTES, isRouteActive } from "@/constants/routes";

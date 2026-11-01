@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { MoonIcon } from "@/icons/MoonIcon";
 import { SunIcon } from "@/icons/SunIcon";
+import { useAppStore } from "@/store/AppStore";
 import { cn } from "@/utils/cn";
 
 interface ThemeSwitcherProps {
@@ -18,6 +19,7 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({
 }) => {
   const { t } = useTranslation();
   const { resolvedTheme, setTheme } = useTheme();
+  const { updateConfig } = useAppStore();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -35,7 +37,11 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({
         className ??
           "w-8 h-8 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100",
       )}
-      onPress={() => setTheme(isDark ? "light" : "dark")}
+      onPress={() => {
+        const next = isDark ? "light" : "dark";
+        setTheme(next);
+        updateConfig((previous) => ({ ...previous, theme: next }));
+      }}
       size="sm"
       variant="ghost"
     >

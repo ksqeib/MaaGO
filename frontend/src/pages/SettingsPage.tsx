@@ -1,92 +1,107 @@
-import { useTheme } from "next-themes";
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { FaLanguage, FaMoon, FaSun, FaDesktop } from "react-icons/fa";
+import {
+  FaBell,
+  FaClock,
+  FaDesktop,
+  FaPalette,
+  FaPlayCircle,
+  FaPlug,
+} from "react-icons/fa";
 
-import { PageContainer } from "@/components/PageContainer";
 import { PageHeader } from "@/components/PageHeader";
+import { useAppStore } from "@/store/AppStore";
 import { cn } from "@/utils/cn";
 
-const themeOptions = [
-  { value: "light", icon: <FaSun />, label: "theme.light" },
-  { value: "dark", icon: <FaMoon />, label: "theme.dark" },
-  { value: "system", icon: <FaDesktop />, label: "theme.system" },
+import { AppearanceSettings } from "./settings/AppearanceSettings";
+import { ConnectionSettings } from "./settings/ConnectionSettings";
+import { NotificationSettings } from "./settings/NotificationSettings";
+import { RunSettings } from "./settings/RunSettings";
+import { ScheduleSettings } from "./settings/ScheduleSettings";
+import { TraySettings } from "./settings/TraySettings";
+
+type TabKey = "connection" | "run" | "schedule" | "notification" | "appearance" | "tray";
+
+const tabs: { key: TabKey; icon: ReactNode }[] = [
+  { key: "connection", icon: <FaPlug /> },
+  { key: "run", icon: <FaPlayCircle /> },
+  { key: "schedule", icon: <FaClock /> },
+  { key: "notification", icon: <FaBell /> },
+  { key: "appearance", icon: <FaPalette /> },
+  { key: "tray", icon: <FaDesktop /> },
 ];
 
 export const SettingsPage = () => {
-  const { t, i18n } = useTranslation();
-  const { theme, setTheme } = useTheme();
+  const { t } = useTranslation();
+  const { saveState } = useAppStore();
+  const [activeTab, setActiveTab] = useState<TabKey>("connection");
 
-  const changeLanguage = (language: "zh_CN" | "en_US") => {
-    void i18n.changeLanguage(language);
-  };
+  const content = (() => {
+    switch (activeTab) {
+      case "run":
+        return <RunSettings />;
+      case "schedule":
+        return <ScheduleSettings />;
+      case "notification":
+        return <NotificationSettings />;
+      case "appearance":
+        return <AppearanceSettings />;
+      case "tray":
+        return <TraySettings />;
+      default:
+        return <ConnectionSettings />;
+    }
+  })();
 
   return (
-    <PageContainer>
+    <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden px-4 pb-4 pt-[var(--content-pt)]">
       <PageHeader
         description={t("settings.subtitle")}
+        endContent={
+          <span
+            className={cn(
+              "rounded-full px-3 py-1 text-[11px] font-medium",
+              saveState === "error"
+                ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                : "bg-surface-secondary text-muted",
+            )}
+          >
+            {saveState === "saving"
+              ? t("common.saving")
+              : saveState === "error"
+                ? t("common.save_error")
+                : t("common.saved")}
+          </span>
+        }
         title={t("settings.title")}
       />
 
-      <div className="launcher-glass rounded-3xl p-6">
-        <h2 className="text-lg font-bold">{t("settings.appearance")}</h2>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {themeOptions.map((option) => {
-            const active = (theme ?? "system") === option.value;
+      <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+        <aside className="launcher-glass scrollbar-hide flex shrink-0 flex-row gap-1 overflow-x-auto rounded-3xl p-2 lg:w-44 lg:flex-col lg:overflow-y-auto">
+          {tabs.map((tab) => {
+            const active = tab.key === activeTab;
             return (
               <button
-                key={option.value}
                 className={cn(
-                  "flex items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition-colors",
+                  "flex shrink-0 items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition-colors",
                   active
-                    ? "border-brand-500/60 bg-brand-500/10 text-brand-700 dark:text-brand-300"
-                    : "border-border bg-surface-secondary/60 text-muted hover:text-foreground",
+                    ? "bg-brand-500/10 text-brand-700 dark:text-brand-300"
+                    : "text-muted hover:bg-surface-secondary/60 hover:text-foreground",
                 )}
-                onClick={() => setTheme(option.value)}
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
                 type="button"
               >
-                <span className="text-base">{option.icon}</span>
-                {t(option.label)}
+                <span className="text-xs">{tab.icon}</span>
+                <span className="whitespace-nowrap">{t(`settings.tabs.${tab.key}`)}</span>
               </button>
             );
           })}
-        </div>
+        </aside>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <FaLanguage />
-            {t("settings.language")}
-          </div>
-          <div className="flex gap-2">
-            <button
-              className={cn(
-                "rounded-full px-4 py-2 text-sm font-medium transition-colors",
-                i18n.resolvedLanguage?.startsWith("zh")
-                  ? "bg-brand-500 text-white"
-                  : "bg-surface-secondary text-muted hover:text-foreground",
-              )}
-              onClick={() => changeLanguage("zh_CN")}
-              type="button"
-            >
-              {t("settings.language_zh")}
-            </button>
-            <button
-              className={cn(
-                "rounded-full px-4 py-2 text-sm font-medium transition-colors",
-                i18n.resolvedLanguage?.startsWith("en")
-                  ? "bg-brand-500 text-white"
-                  : "bg-surface-secondary text-muted hover:text-foreground",
-              )}
-              onClick={() => changeLanguage("en_US")}
-              type="button"
-            >
-              {t("settings.language_en")}
-            </button>
-          </div>
-        </div>
-
-        <p className="mt-5 text-xs text-muted">{t("settings.saved_locally")}</p>
+        <div className="min-h-0 flex-1 overflow-y-auto px-0.5 pb-2">{content}</div>
       </div>
-    </PageContainer>
+    </div>
   );
 };

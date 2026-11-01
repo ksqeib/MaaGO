@@ -1,0 +1,370 @@
+import { Events } from "@wailsio/runtime";
+import { useTheme } from "next-themes";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { useTranslation } from "react-i18next";
+
+import * as api from "bindings/MaaGO/internal/app/service";
+import { DEFAULT_CONFIG, DEFAULT_RUN_STATE } from "@/data/defaults";
+import type {
+  AppConfig,
+  AppInfo,
+  ConnectionCandidate,
+  ConnectionTestResult,
+  CoreStatus,
+  LogEntry,
+  RunState,
+  ScheduleStatus,
+  TaskState,
+} from "@/types/maa";
+
+type SaveState = "idle" | "saving" | "saved" | "error";
+
+interface AppStoreValue {
+  config: AppConfig;
+  updateConfig: (updater: (previous: AppConfig) => AppConfig) => void;
+  ready: boolean;
+  saveState: SaveState;
+  run: RunState;
+  logs: LogEntry[];
+  taskStates: Record<string, TaskState>;
+  schedule: ScheduleStatus | null;
+  core: CoreStatus | null;
+  appInfo: AppInfo | null;
+  error: string;
+  clearError: () => void;
+  startQueue: () => Promise<void>;
+  stopQueue: () => Promise<void>;
+  startTask: (taskId: string) => Promise<void>;
+  clearLogs: () => void;
+  testConnection: (address: string) => Promise<ConnectionTestResult>;
+  detectConnection: () => Promise<ConnectionCandidate[]>;
+  testNotification: () => Promise<void>;
+  refreshSchedule: () => Promise<void>;
+  openDataDir: () => void;
+  openLogsDir: () => void;
+}
+
+const AppStoreContext = createContext<AppStoreValue | null>(null);
+
+const CONFIG_FALLBACK_KEY = "maago.config";
+
+function withTimeout<T>(promise: Promise<T>, fallback: T, ms = 1500): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => {
+      window.setTimeout(() => resolve(fallback), ms);
+    }),
+  ]).catch(() => fallback);
+}
+
+function cloneConfig(config: AppConfig): AppConfig {
+  return structuredClone(config);
+}
+
+export const AppStoreProvider = ({ children }: { children: React.ReactNode }) => {
+  const { t, i18n } = useTranslation();
+  const { setTheme } = useTheme();
+
+  const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
+  const [ready, setReady] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [run, setRun] = useState<RunState>(DEFAULT_RUN_STATE as unknown as RunState);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
+  const [schedule, setSchedule] = useState<ScheduleStatus | null>(null);
+  const [core, setCore] = useState<CoreStatus | null>(null);
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [error, setError] = useState("");
+
+  const saveReady = useRef(false);
+  const lastRunStarted = useRef("");
+
+  useEffect(() => {
+    let disposed = false;
+
+    const load = async () => {
+      const [loadedConfig, state, initialLogs, scheduleStatus, coreStatus, info] =
+        await Promise.all([
+          withTimeout(api.GetConfig() as unknown as Promise<AppConfig>, DEFAULT_CONFIG),
+          withTimeout(api.GetRunState() as unknown as Promise<RunState>, DEFAULT_RUN_STATE as unknown as RunState),
+          withTimeout(api.GetLogs() as unknown as Promise<LogEntry[]>, []),
+          withTimeout(api.GetScheduleStatus() as unknown as Promise<ScheduleStatus>, null as unknown as ScheduleStatus),
+          withTimeout(api.GetCoreStatus() as unknown as Promise<CoreStatus>, null as unknown as CoreStatus),
+          withTimeout(api.GetAppInfo() as unknown as Promise<AppInfo>, null as unknown as AppInfo),
+        ]);
+      if (disposed) return;
+
+      let effectiveConfig = loadedConfig;
+      if (!effectiveConfig || !effectiveConfig.tasks) {
+        try {
+          const cached = localStorage.getItem(CONFIG_FALLBACK_KEY);
+          effectiveConfig = cached ? (JSON.parse(cached) as AppConfig) : DEFAULT_CONFIG;
+        } catch {
+          effectiveConfig = DEFAULT_CONFIG;
+        }
+      }
+
+      setConfig(effectiveConfig);
+      setRun(state ?? (DEFAULT_RUN_STATE as unknown as RunState));
+      setLogs(initialLogs ?? []);
+      setSchedule(scheduleStatus ?? null);
+      setCore(coreStatus ?? null);
+      setAppInfo(info ?? null);
+      setReady(true);
+    };
+
+    void load();
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  // Persist config changes after a short debounce.
+  useEffect(() => {
+    if (!ready) return;
+    if (!saveReady.current) {
+      saveReady.current = true;
+      return;
+    }
+
+    setSaveState("saving");
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          await Promise.race([
+            api.SaveConfig(config as never),
+            new Promise((_, reject) =>
+              window.setTimeout(() => reject(new Error("timeout")), 1500),
+            ),
+          ]);
+          setSaveState("saved");
+        } catch {
+          try {
+            localStorage.setItem(CONFIG_FALLBACK_KEY, JSON.stringify(config));
+            setSaveState("saved");
+          } catch {
+            setSaveState("error");
+          }
+        }
+      })();
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [config, ready]);
+
+  // Apply the persisted theme once the config is available.
+  useEffect(() => {
+    if (!ready) return;
+    setTheme(config.theme);
+  }, [config.theme, ready, setTheme]);
+
+  // Apply the persisted language.
+  useEffect(() => {
+    if (!ready || !config.language) return;
+    if (i18n.resolvedLanguage !== config.language) {
+      void i18n.changeLanguage(config.language);
+    }
+  }, [config.language, i18n, ready]);
+
+  // Keep tray labels in sync with the rendered language.
+  useEffect(() => {
+    if (!ready) return;
+    try {
+      void api
+        .SetTrayLabels(t("tray.show"), t("tray.start"), t("tray.stop"), t("tray.quit"))
+        .catch(() => undefined);
+    } catch {
+      // Browser preview has no tray.
+    }
+  }, [i18n.resolvedLanguage, ready, t]);
+
+  useEffect(() => {
+    const offLog = Events.On("maago:log", (event) => {
+      const entry = event.data as unknown as LogEntry;
+      if (!entry) return;
+      setLogs((previous) => [...previous.slice(-999), entry]);
+    });
+    const offRun = Events.On("maago:run", (event) => {
+      const state = event.data as unknown as RunState;
+      if (!state) return;
+      if (state.status === "running" && state.startedAt !== lastRunStarted.current) {
+        lastRunStarted.current = state.startedAt;
+        setTaskStates({});
+      }
+      if (
+        state.finishedAt &&
+        (state.status === "success" || state.status === "failed" || state.status === "stopped")
+      ) {
+        const started = Date.parse(state.startedAt);
+        const finished = Date.parse(state.finishedAt);
+        const durationSeconds =
+          Number.isFinite(started) && Number.isFinite(finished)
+            ? Math.max(0, Math.round((finished - started) / 1000))
+            : 0;
+        setConfig((previous) => {
+          if (previous.lastRun?.finishedAt === state.finishedAt) return previous;
+          return {
+            ...previous,
+            lastRun: {
+              startedAt: state.startedAt,
+              finishedAt: state.finishedAt,
+              status: state.status,
+              durationSeconds,
+              completedTasks: state.completed,
+              totalTasks: state.total,
+            },
+          };
+        });
+      }
+      setRun(state);
+    });
+    const offTask = Events.On("maago:task", (event) => {
+      const state = event.data as unknown as TaskState;
+      if (!state?.taskId) return;
+      setTaskStates((previous) => ({ ...previous, [state.taskId]: state }));
+    });
+    const offSchedule = Events.On("maago:schedule", (event) => {
+      const status = event.data as unknown as ScheduleStatus;
+      if (status) setSchedule(status);
+    });
+
+    return () => {
+      offLog();
+      offRun();
+      offTask();
+      offSchedule();
+    };
+  }, []);
+
+  const updateConfig = useCallback((updater: (previous: AppConfig) => AppConfig) => {
+    setConfig((previous) => updater(cloneConfig(previous)));
+  }, []);
+
+  const guard = useCallback(async (action: () => Promise<unknown>, fallback: string) => {
+    try {
+      await action();
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : fallback);
+    }
+  }, []);
+
+  const saveNow = useCallback(async (value: AppConfig) => {
+    try {
+      await Promise.race([
+        api.SaveConfig(value as never),
+        new Promise((_, reject) =>
+          window.setTimeout(() => reject(new Error("timeout")), 1500),
+        ),
+      ]);
+    } catch {
+      try {
+        localStorage.setItem(CONFIG_FALLBACK_KEY, JSON.stringify(value));
+      } catch {
+        // Ignore storage failures; the next save attempt will retry.
+      }
+    }
+  }, []);
+
+  const startQueue = useCallback(async () => {
+    await saveNow(config);
+    await guard(() => api.StartQueue(), "启动任务失败");
+  }, [config, guard, saveNow]);
+
+  const stopQueue = useCallback(async () => {
+    await guard(() => api.StopQueue(), "停止任务失败");
+  }, [guard]);
+
+  const startTask = useCallback(
+    async (taskId: string) => {
+      await saveNow(config);
+      await guard(() => api.StartTask(taskId), "启动任务失败");
+    },
+    [config, guard, saveNow],
+  );
+
+  const clearLogs = useCallback(() => {
+    setLogs([]);
+    void api.ClearLogs().catch(() => undefined);
+  }, []);
+
+  const testConnection = useCallback(async (address: string) => {
+    return withTimeout(
+      api.TestConnection(address) as unknown as Promise<ConnectionTestResult>,
+      { ok: false, address, latencyMs: 0, message: "当前环境无法连接后端" },
+      4000,
+    );
+  }, []);
+
+  const detectConnection = useCallback(async () => {
+    return withTimeout(
+      api.DetectConnection() as unknown as Promise<ConnectionCandidate[]>,
+      [],
+      5000,
+    );
+  }, []);
+
+  const testNotification = useCallback(async () => {
+    await guard(() => api.TestNotification(), "发送测试通知失败");
+  }, [guard]);
+
+  const refreshSchedule = useCallback(async () => {
+    const status = await withTimeout(
+      api.GetScheduleStatus() as unknown as Promise<ScheduleStatus>,
+      null as unknown as ScheduleStatus,
+    );
+    if (status) setSchedule(status);
+  }, []);
+
+  const openDataDir = useCallback(() => {
+    void api.OpenDataDir().catch(() => undefined);
+  }, []);
+
+  const openLogsDir = useCallback(() => {
+    void api.OpenLogsDir().catch(() => undefined);
+  }, []);
+
+  const value: AppStoreValue = {
+    config,
+    updateConfig,
+    ready,
+    saveState,
+    run,
+    logs,
+    taskStates,
+    schedule,
+    core,
+    appInfo,
+    error,
+    clearError: () => setError(""),
+    startQueue,
+    stopQueue,
+    startTask,
+    clearLogs,
+    testConnection,
+    detectConnection,
+    testNotification,
+    refreshSchedule,
+    openDataDir,
+    openLogsDir,
+  };
+
+  return (
+    <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>
+  );
+};
+
+export function useAppStore(): AppStoreValue {
+  const value = useContext(AppStoreContext);
+  if (!value) {
+    throw new Error("useAppStore must be used inside AppStoreProvider");
+  }
+  return value;
+}
