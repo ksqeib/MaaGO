@@ -233,7 +233,7 @@ func defaultTasks() []TaskConfig {
 			"maxTimes":     4,
 			"expedited":    false,
 			"confirm3":     true,
-			"confirm4":     false,
+			"confirm4":     true,
 			"confirm5":     false,
 			"autoRefresh":  true,
 			"strategy":     "default",
@@ -241,13 +241,12 @@ func defaultTasks() []TaskConfig {
 		}},
 		{ID: "task-mall", Type: TaskMall, Enabled: true, Options: map[string]any{
 			"visitFriends":  true,
-			"onceADay":      true,
 			"creditFight":   false,
 			"shopping":      true,
 			"highPriority":  "招聘许可;加急许可",
 			"blacklist":     "碳;家具",
 			"onlyDiscount":  false,
-			"reserveCredit": 300,
+			"reserveCredit": true,
 		}},
 		{ID: "task-award", Type: TaskAward, Enabled: true, Options: map[string]any{
 			"dailyWeekly":   true,

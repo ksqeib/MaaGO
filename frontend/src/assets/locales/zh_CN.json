@@ -77,6 +77,7 @@
     "use_candidate": "使用",
     "core_title": "核心状态",
     "core_demo": "当前为界面演示模式，不会操作游戏。",
+    "core_ready": "MaaCore 已就绪",
     "schedule_title": "定时执行",
     "schedule_disabled": "未启用",
     "next_run": "下次运行",
@@ -112,6 +113,7 @@
     "stop_queue": "停止",
     "clear_logs": "清空日志",
     "demo_warning": "尚未接入 MaaCore：当前运行只演示界面流程，不会操作游戏。",
+    "core_ready": "MaaCore 运行模式",
     "options": "任务设置",
     "run_this_task": "仅运行此任务",
     "already_added": "已添加"
@@ -218,7 +220,7 @@
     },
     "core": {
       "title": "核心状态",
-      "available": "已找到 MaaCore",
+      "available": "MaaCore 已加载",
       "missing": "未找到 MaaCore",
       "demo": "调用层尚未接入，当前为界面演示模式。",
       "path": "路径"

@@ -2,9 +2,9 @@
 
 MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArknights）桌面客户端，参考 LeviLauncher 的界面结构与视觉风格。
 
-> 当前尚未接入 MaaCore 调用层。任务运行是**界面演示模式**：会完整走一遍任务队列、状态与日志流程，但不会操作游戏。
+已通过 MaaCore 的 C API（`AsstCaller`）接入真实核心；MaaCore 与依赖 DLL、`resource/`、ADB 全部放在独立的 `core/` 目录，不会散落在程序根目录。
 
-## 已实现
+## 功能
 
 - Wails v3 无边框窗口、自绘标题栏、窗口尺寸持久化
 - 侧边栏 + 顶栏导航（圆角联体背景）
@@ -16,14 +16,59 @@ MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArkn
   - 实时日志、运行进度、停止任务
 - 日志页：级别过滤、搜索、自动滚动、清空、打开日志目录
 - 设置页
-  - 连接：ADB 地址、自动检测、常见模拟器端口扫描、ADB 路径、触控模式、截图增强
-  - 运行：客户端类型、阻止休眠、屏幕常亮、运行时长上限、完成后动作（仅保存）
+  - 连接：ADB 地址、自动检测、模拟器端口扫描、ADB 路径、触控模式、截图增强
+  - 运行：客户端类型、阻止休眠、屏幕常亮、运行时长上限
   - 定时：每天/指定星期执行、强制定时启动、开始前通知
   - 通知：Windows 系统通知（完成/出错/定时前）
   - 外观：浅色 / 深色 / 跟随系统、简体中文 / English
   - 托盘：最小化到托盘、关闭到托盘
 - 系统托盘：显示窗口、开始任务、停止任务、退出
-- 无需 MAA 官方素材：界面与图标均为独立设计
+- 独立设计的界面与图标，不使用 MAA 官方 logo
+
+## MaaCore 目录
+
+```
+core/
+├── MaaCore.dll
+├── MaaUtils.dll
+├── MaaAdbControlUnit.dll
+├── MaaWin32ControlUnit.dll
+├── DirectML.dll
+├── fastdeploy_ppocr_maa.dll
+├── onnxruntime_maa.dll
+├── opencv_world4_maa.dll
+├── adb/
+│   ├── adb.exe
+│   ├── AdbWinApi.dll
+│   └── AdbWinUsbApi.dll
+└── resource/
+```
+
+从官方 MAA 发布包重新生成：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1
+```
+
+默认从 `D:\tool\MAA-v6.18.0-win-x64` 和 `D:\tool\platform-tools` 复制，可用参数覆盖：
+
+```powershell
+.\scripts\install-core.ps1 -Source "D:\path\to\MAA" -AdbSource "D:\path\to\platform-tools"
+```
+
+查找顺序：`%MAAGO_CORE_DIR%` → `<exe>/core` → `<exe>/../core` → `<cwd>/core`。
+`MaaCore.dll` 使用 `LOAD_WITH_ALTERED_SEARCH_PATH` 加载，依赖 DLL 会从 `core/` 解析。
+
+如果 `core/` 不存在，程序会自动降级为界面演示模式，并在仪表盘/设置中提示。
+
+## 使用真实核心
+
+1. 确认 `core/MaaCore.dll` 与 `core/resource/` 存在。
+2. 在“设置 → 连接”填写模拟器 ADB 地址，例如 `127.0.0.1:16384`；留空时会自动扫描常见模拟器端口，并读取 `adb devices` 的结果。
+3. 确认 ADB 可用：`core/adb/adb.exe devices` 能看到设备。
+4. 回到仪表盘点击“一键开始”。
+
+> 真实运行会操作游戏。首次测试建议只启用“开始唤醒”或“领取奖励”，确认连接和截图正常后再启用完整队列。
 
 ## 开发
 
@@ -32,7 +77,7 @@ MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArkn
 - Windows 10/11
 - Go 1.25+
 - Node.js 20+
-- Wails v3 CLI（建议与本项目 `go.mod` 的 `beta.19` 保持一致）
+- Wails v3 CLI（建议与 `go.mod` 的 `beta.19` 一致）
 
 ```bash
 go mod tidy
@@ -54,6 +99,7 @@ wails3 task dev
 ```
 .
 ├── build/                  # Wails 构建配置、图标、Windows 清单
+├── core/                   # MaaCore 运行时（DLL / adb / resource，二进制不入库）
 ├── frontend/
 │   └── src/
 │       ├── assets/locales/ # zh_CN / en_US
@@ -69,17 +115,20 @@ wails3 task dev
 │   ├── config/             # 配置读写、迁移、任务模型
 │   ├── connection/         # 模拟器端口检测
 │   ├── lifecycle/          # 窗口显示/隐藏、退出状态
+│   ├── maa/                # MaaCore C API 绑定、任务参数、ADB 解析
 │   ├── notify/             # Windows 系统通知
-│   ├── runner/             # 任务队列与演示执行器
+│   ├── runner/             # 任务队列（真实核心 + 演示降级）
 │   ├── scheduler/          # 定时执行
 │   ├── tray/               # 系统托盘
 │   └── version/
+├── scripts/install-core.ps1
 ├── main.go
 └── Taskfile.yml
 ```
 
-## 说明
+## 暂未实现
 
-- 自动战斗、小工具、成就、远程控制、第三方推送等暂未实现。
-- 自动更新暂未实现。
-- 接入 MaaCore 后，`internal/runner` 的演示执行器可以替换为真实调用，前端事件契约保持不变。
+- 自动战斗（Copilot）
+- 小工具（公招识别、仓库识别、干员识别）
+- 完成后动作（锁屏/睡眠/关机等，仅保存设置）
+- 自动更新与安装包

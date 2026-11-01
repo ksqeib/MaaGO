@@ -1,10 +1,8 @@
 // Package runner executes the task queue.
 //
-// MaaCore is not wired in yet, so the current implementation drives the UI in a
-// clearly labelled demo mode: it walks the enabled tasks, emits realistic log
-// lines and state transitions, and never touches the game. The public surface
-// is designed so a real core runner can replace runQueue later without changing
-// the frontend contract.
+// When MaaCore is available the queue is handed to the real C API; otherwise
+// the runner falls back to a clearly labelled demo mode. The frontend contract
+// (state events, task events and logs) is identical in both paths.
 package runner
 
 import (
@@ -20,6 +18,7 @@ import (
 
 	"MaaGO/internal/apppath"
 	"MaaGO/internal/config"
+	"MaaGO/internal/maa"
 )
 
 // Status is the lifecycle state of the queue.
@@ -94,17 +93,19 @@ type Runner struct {
 	onFinish FinishFunc
 	notify   func(title, message string)
 	logFile  *os.File
+	core     *maa.Core
 
 	logMu sync.Mutex
 }
 
 // New creates a runner. emit and onFinish may be nil in tests.
-func New(emit EmitFunc, onFinish FinishFunc, notify func(title, message string)) *Runner {
+func New(emit EmitFunc, onFinish FinishFunc, notify func(title, message string), core *maa.Core) *Runner {
 	r := &Runner{
-		state:    RunState{Status: StatusIdle, Demo: true},
+		state:    RunState{Status: StatusIdle, Demo: core == nil || !core.Available()},
 		emit:     emit,
 		onFinish: onFinish,
 		notify:   notify,
+		core:     core,
 		logs:     make([]LogEntry, 0, 256),
 	}
 	path := filepath.Join(apppath.LogsDir(), "run.log")
@@ -260,24 +261,33 @@ func (r *Runner) start(tasks []config.TaskConfig, cfg config.AppConfig) error {
 	if cfg.Run.RunDurationMinutes > 0 {
 		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(cfg.Run.RunDurationMinutes)*time.Minute)
 	}
+	useCore := r.core != nil && r.core.Available()
 	r.cancel = cancel
 	now := time.Now()
+	message := "MaaCore 运行模式"
+	if !useCore {
+		message = "演示模式：未找到可用的 MaaCore"
+	}
 	r.state = RunState{
 		Status:    StatusRunning,
 		Total:     len(tasks),
 		StartedAt: now.Format(time.RFC3339),
 		Progress:  0,
-		Demo:      true,
-		Message:   "演示模式：尚未接入 MaaCore",
+		Demo:      !useCore,
+		Message:   message,
 	}
 	r.mu.Unlock()
 
 	r.emitState(r.State())
 	r.SystemLog("info", "========================================")
 	r.SystemLog("info", fmt.Sprintf("开始执行任务队列，共 %d 个任务", len(tasks)))
-	r.SystemLog("warn", "当前为界面演示模式：尚未接入 MaaCore，不会操作游戏。")
-
-	go r.runQueue(ctx, tasks)
+	if useCore {
+		r.SystemLog("info", fmt.Sprintf("MaaCore %s · %s", r.core.Version(), r.core.Dir()))
+		go r.runCore(ctx, tasks, cfg)
+	} else {
+		r.SystemLog("warn", "当前为界面演示模式：未找到可用的 MaaCore，不会操作游戏。")
+		go r.runQueue(ctx, tasks)
+	}
 	return nil
 }
 
@@ -335,30 +345,37 @@ func (r *Runner) runQueue(ctx context.Context, tasks []config.TaskConfig) {
 		r.emitState(r.State())
 	}
 
-	r.mu.Lock()
+	status := StatusFailed
+	message := "部分任务未完成"
 	switch {
 	case stopped || ctx.Err() == context.DeadlineExceeded:
-		r.state.Status = StatusStopped
-		r.state.Message = "任务已停止"
+		status = StatusStopped
+		message = "任务已停止"
 	case completed == len(tasks):
-		r.state.Status = StatusSuccess
-		r.state.Message = "全部任务完成"
-	default:
-		r.state.Status = StatusFailed
-		r.state.Message = "部分任务未完成"
+		status = StatusSuccess
+		message = "全部任务完成"
 	}
+	r.complete(status, message, completed, len(tasks))
+}
+
+// complete publishes the final run state, persists history and notifies.
+func (r *Runner) complete(status Status, message string, completed, total int) {
+	r.mu.Lock()
+	r.state.Status = status
+	r.state.Message = message
 	r.state.Completed = completed
+	r.state.Total = total
 	r.state.CurrentTaskID = ""
 	r.state.CurrentTaskName = ""
 	r.state.FinishedAt = time.Now().Format(time.RFC3339)
-	if r.state.Status == StatusSuccess {
+	if status == StatusSuccess {
 		r.state.Progress = 100
 	}
 	state := r.state
 	r.mu.Unlock()
 
 	r.emitState(state)
-	r.SystemLog("info", fmt.Sprintf("任务队列结束：%s（%d/%d）", state.Message, completed, len(tasks)))
+	r.SystemLog("info", fmt.Sprintf("任务队列结束：%s（%d/%d）", state.Message, completed, total))
 	r.SystemLog("info", "========================================")
 
 	_ = config.Update(func(c *config.AppConfig) {
@@ -374,7 +391,7 @@ func (r *Runner) runQueue(ctx context.Context, tasks []config.TaskConfig) {
 			Status:          string(state.Status),
 			DurationSeconds: seconds,
 			CompletedTasks:  completed,
-			TotalTasks:      len(tasks),
+			TotalTasks:      total,
 		}
 	})
 

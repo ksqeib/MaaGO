@@ -53,7 +53,11 @@ export const ConnectionSettings = () => {
         title={t("settings.core.title")}
       >
         <p className="text-xs leading-relaxed text-muted">
-          {core?.message || t("settings.core.demo")}
+          {core?.available
+            ? core.version
+              ? `MaaCore ${core.version}`
+              : t("settings.core.available")
+            : core?.message || t("settings.core.demo")}
         </p>
         {core?.path && (
           <p className="mt-2 break-all rounded-xl bg-surface-secondary/60 px-3 py-2 font-mono text-[10px] text-muted">

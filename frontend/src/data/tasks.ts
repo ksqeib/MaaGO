@@ -238,7 +238,7 @@ export const TASK_META: TaskMeta[] = [
         key: "confirm4",
         type: "switch",
         label: { zh: "自动确认 4 星", en: "Confirm 4 stars" },
-        defaultValue: false,
+        defaultValue: true,
       },
       {
         key: "confirm5",
@@ -288,12 +288,6 @@ export const TASK_META: TaskMeta[] = [
         defaultValue: true,
       },
       {
-        key: "onceADay",
-        type: "switch",
-        label: { zh: "一日只执行一次", en: "Only once a day" },
-        defaultValue: true,
-      },
-      {
         key: "creditFight",
         type: "switch",
         label: { zh: "借助战打 OF-1 赚信用", en: "OF-1 support battle" },
@@ -327,11 +321,9 @@ export const TASK_META: TaskMeta[] = [
       },
       {
         key: "reserveCredit",
-        type: "number",
-        label: { zh: "信用低于此值停止", en: "Stop below credits" },
-        min: 0,
-        max: 1000,
-        defaultValue: 300,
+        type: "switch",
+        label: { zh: "信用低于 300 时停止购买", en: "Stop below 300 credits" },
+        defaultValue: true,
       },
     ],
   },

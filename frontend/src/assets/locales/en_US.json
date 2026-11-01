@@ -77,6 +77,7 @@
     "use_candidate": "Use",
     "core_title": "Core status",
     "core_demo": "Demo mode: the game is not controlled.",
+    "core_ready": "MaaCore is ready",
     "schedule_title": "Schedule",
     "schedule_disabled": "Disabled",
     "next_run": "Next run",
@@ -111,7 +112,8 @@
     "start_queue": "Link Start!",
     "stop_queue": "Stop",
     "clear_logs": "Clear logs",
-    "demo_warning": "MaaCore is not wired in yet: runs only demonstrate the UI and never touch the game.",
+    "demo_warning": "MaaCore is not available: runs only demonstrate the UI and never touch the game.",
+    "core_ready": "MaaCore running mode",
     "options": "Task settings",
     "run_this_task": "Run this task only",
     "already_added": "Added"
@@ -218,7 +220,7 @@
     },
     "core": {
       "title": "Core status",
-      "available": "MaaCore found",
+      "available": "MaaCore loaded",
       "missing": "MaaCore not found",
       "demo": "The call layer is not wired in yet; this is demo mode.",
       "path": "Path"

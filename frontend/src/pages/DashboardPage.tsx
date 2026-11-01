@@ -150,7 +150,8 @@ export const DashboardPage = () => {
                     : run.message || t("dashboard.no_current_task")}
                 </h2>
                 <p className="mt-1 text-xs text-muted">
-                  {run.message || t("dashboard.core_demo")}
+                  {run.message ||
+                    (core?.demo ? t("dashboard.core_demo") : t("dashboard.core_ready"))}
                 </p>
               </div>
               <div className="rounded-2xl bg-surface-secondary/60 px-3 py-2 text-right">
@@ -437,7 +438,11 @@ export const DashboardPage = () => {
                 {core?.available ? t("settings.core.available") : t("settings.core.missing")}
               </p>
               <p className="mt-1 text-[10px] leading-relaxed text-muted">
-                {core?.message || t("settings.core.demo")}
+                {core?.available
+                  ? core.version
+                    ? `MaaCore ${core.version}`
+                    : t("settings.core.available")
+                  : core?.message || t("settings.core.demo")}
               </p>
             </div>
           </section>

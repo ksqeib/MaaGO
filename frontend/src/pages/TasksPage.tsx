@@ -39,6 +39,7 @@ export const TasksPage = () => {
     logs,
     run,
     taskStates,
+    core,
     startQueue,
     stopQueue,
     startTask,
@@ -335,8 +336,17 @@ export const TasksPage = () => {
             <ProgressBar className="mt-2" value={run.progress} />
           </header>
 
-          <div className="flex items-start gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[10px] leading-relaxed text-amber-700 dark:text-amber-300">
-            {t("tasks.demo_warning")}
+          <div
+            className={cn(
+              "flex items-start gap-2 px-3 py-2 text-[10px] leading-relaxed",
+              core?.demo
+                ? "border-b border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                : "border-b border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+            )}
+          >
+            {core?.demo
+              ? t("tasks.demo_warning")
+              : `${t("tasks.core_ready")}${core?.version ? ` · ${core.version}` : ""}`}
           </div>
 
           <LogConsole

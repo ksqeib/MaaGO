@@ -146,6 +146,7 @@ export interface CoreStatus {
   path: string;
   message: string;
   demo: boolean;
+  version?: string;
 }
 
 export interface AppInfo {

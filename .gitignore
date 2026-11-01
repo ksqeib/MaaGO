@@ -14,6 +14,11 @@
 *.out
 /.task/
 
+# MaaCore runtime binaries (see core/README.md)
+/core/*.dll
+/core/adb/
+/core/resource/
+
 # Editor / OS
 .DS_Store
 Thumbs.db

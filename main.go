@@ -15,6 +15,7 @@ import (
 	"MaaGO/internal/apppath"
 	"MaaGO/internal/config"
 	"MaaGO/internal/lifecycle"
+	"MaaGO/internal/maa"
 	"MaaGO/internal/notify"
 	"MaaGO/internal/runner"
 	"MaaGO/internal/scheduler"
@@ -106,13 +107,24 @@ func main() {
 		}
 	}
 
-	taskRunner := runner.New(emit, nil, sendNotification)
+	core := maa.New()
+	if core.Available() {
+		if err := core.LoadResource(); err != nil {
+			log.Printf("startup: MaaCore resource: %v", err)
+		} else {
+			log.Printf("startup: MaaCore %s loaded from %s", core.Version(), core.Dir())
+		}
+	} else {
+		log.Printf("startup: MaaCore unavailable: %v", core.Err())
+	}
+
+	taskRunner := runner.New(emit, nil, sendNotification, core)
 	defer taskRunner.Close()
 
 	taskScheduler := scheduler.New(taskRunner, emit, sendNotification)
 	taskScheduler.Update(cfg.Schedule)
 
-	service := app.NewService(taskRunner, taskScheduler, emit)
+	service := app.NewService(taskRunner, taskScheduler, emit, core)
 
 	wailsApp := application.New(application.Options{
 		Name:        "MaaGO",

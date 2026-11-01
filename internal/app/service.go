@@ -3,7 +3,7 @@ package app
 
 import (
 	"context"
-	"os"
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,6 +13,7 @@ import (
 	"MaaGO/internal/config"
 	"MaaGO/internal/connection"
 	"MaaGO/internal/lifecycle"
+	"MaaGO/internal/maa"
 	"MaaGO/internal/notify"
 	"MaaGO/internal/runner"
 	"MaaGO/internal/scheduler"
@@ -25,12 +26,13 @@ import (
 type Service struct {
 	runner    *runner.Runner
 	scheduler *scheduler.Scheduler
+	core      *maa.Core
 	emit      func(name string, payload any)
 }
 
 // NewService creates the application service.
-func NewService(r *runner.Runner, s *scheduler.Scheduler, emit func(name string, payload any)) *Service {
-	return &Service{runner: r, scheduler: s, emit: emit}
+func NewService(r *runner.Runner, s *scheduler.Scheduler, emit func(name string, payload any), core *maa.Core) *Service {
+	return &Service{runner: r, scheduler: s, emit: emit, core: core}
 }
 
 // AppInfo describes the running build.
@@ -52,6 +54,7 @@ type CoreStatus struct {
 	Path      string `json:"path"`
 	Message   string `json:"message"`
 	Demo      bool   `json:"demo"`
+	Version   string `json:"version"`
 }
 
 // GetAppInfo returns build and environment metadata for the About page.
@@ -100,28 +103,43 @@ func (s *Service) SaveConfig(cfg config.AppConfig) error {
 	return nil
 }
 
-// GetCoreStatus checks for a MaaCore runtime next to the executable.
+// GetCoreStatus reports the loaded MaaCore runtime.
 func (s *Service) GetCoreStatus() CoreStatus {
-	candidates := []string{
-		filepath.Join(apppath.InstallDir(), "MaaCore.dll"),
-		filepath.Join(apppath.InstallDir(), "libMaaCore.dll"),
-		filepath.Join(apppath.InstallDir(), "core", "MaaCore.dll"),
-		filepath.Join(apppath.InstallDir(), "install", "MaaCore.dll"),
-		filepath.Join(apppath.Root(), "core", "MaaCore.dll"),
-	}
-	for _, path := range candidates {
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+	if s.core != nil && s.core.Available() {
+		message := "MaaCore 已加载"
+		if version := s.core.Version(); version != "" {
+			message = fmt.Sprintf("MaaCore %s 已加载", version)
+		}
+		if err := s.core.ResourceError(); err != nil {
 			return CoreStatus{
-				Available: true,
-				Path:      path,
-				Message:   "已找到 MaaCore，但调用层尚未接入；当前为界面演示模式。",
+				Available: false,
+				Path:      filepath.Join(s.core.Dir(), "MaaCore.dll"),
+				Message:   fmt.Sprintf("MaaCore 资源加载失败：%v", err),
 				Demo:      true,
+				Version:   s.core.Version(),
 			}
+		}
+		return CoreStatus{
+			Available: true,
+			Path:      filepath.Join(s.core.Dir(), "MaaCore.dll"),
+			Message:   message,
+			Demo:      false,
+			Version:   s.core.Version(),
+		}
+	}
+
+	path := ""
+	message := "未找到可用的 MaaCore，当前为界面演示模式。"
+	if s.core != nil {
+		path = filepath.Join(s.core.Dir(), "MaaCore.dll")
+		if err := s.core.Err(); err != nil {
+			message = fmt.Sprintf("MaaCore 不可用：%v", err)
 		}
 	}
 	return CoreStatus{
 		Available: false,
-		Message:   "未找到 MaaCore，当前为界面演示模式，不会操作游戏。",
+		Path:      path,
+		Message:   message,
 		Demo:      true,
 	}
 }
@@ -156,6 +174,24 @@ func (s *Service) DetectConnection() []connection.Candidate {
 					Address:   result.Address,
 					LatencyMs: result.LatencyMs,
 				}}, candidates...)
+			}
+		}
+	}
+	if err == nil && s.core != nil && s.core.Available() {
+		adbPath := maa.ResolveADB(s.core.Dir(), cfg.Connection.AdbPath)
+		for _, serial := range maa.ADBDevices(adbPath) {
+			duplicate := false
+			for _, candidate := range candidates {
+				if candidate.Address == serial {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				candidates = append(candidates, connection.Candidate{
+					Name:    "ADB 设备",
+					Address: serial,
+				})
 			}
 		}
 	}
