@@ -5,6 +5,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,7 +16,7 @@ import (
 )
 
 // ConfigVersion is bumped when the on-disk shape changes.
-const ConfigVersion = 2
+const ConfigVersion = 3
 
 var (
 	mu       sync.RWMutex
@@ -175,7 +176,7 @@ func Default() AppConfig {
 			Mode:       "adb",
 			AutoDetect: true,
 			Emulator:   "auto",
-			TouchMode:  "minitouch",
+			TouchMode:  "adb",
 			ClientType: "Official",
 		},
 		Run: RunConfig{
@@ -287,6 +288,7 @@ func reloadLocked() (AppConfig, error) {
 	data, err := os.ReadFile(path)
 	switch {
 	case err == nil:
+		data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 		if err := json.Unmarshal(data, &cfg); err != nil {
 			log.Printf("config: invalid %s: %v", path, err)
 			return AppConfig{}, fmt.Errorf("config is corrupted: %w", err)
@@ -369,7 +371,7 @@ func (c *AppConfig) Normalize() {
 		c.Connection.Emulator = "auto"
 	}
 	if c.Connection.TouchMode == "" {
-		c.Connection.TouchMode = "minitouch"
+		c.Connection.TouchMode = "adb"
 	}
 	if c.Connection.ClientType == "" {
 		c.Connection.ClientType = "Official"
@@ -426,6 +428,10 @@ func (c *AppConfig) Normalize() {
 func (c *AppConfig) migrate() {
 	if c.ConfigVersion >= ConfigVersion {
 		return
+	}
+	if c.ConfigVersion < 3 && c.Connection.TouchMode == "minitouch" {
+		// ADB touch works on more emulators; users can switch to minitouch later.
+		c.Connection.TouchMode = "adb"
 	}
 	defaults := Default()
 	if len(c.Tasks) == 0 {

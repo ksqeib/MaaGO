@@ -12,6 +12,7 @@ import (
 	"MaaGO/internal/apppath"
 	"MaaGO/internal/config"
 	"MaaGO/internal/connection"
+	"MaaGO/internal/diagnostics"
 	"MaaGO/internal/lifecycle"
 	"MaaGO/internal/maa"
 	"MaaGO/internal/notify"
@@ -37,15 +38,17 @@ func NewService(r *runner.Runner, s *scheduler.Scheduler, emit func(name string,
 
 // AppInfo describes the running build.
 type AppInfo struct {
-	Name      string `json:"name"`
-	Version   string `json:"version"`
-	Commit    string `json:"commit"`
-	BuildDate string `json:"buildDate"`
-	GoVersion string `json:"goVersion"`
-	OS        string `json:"os"`
-	Arch      string `json:"arch"`
-	DataDir   string `json:"dataDir"`
-	LogsDir   string `json:"logsDir"`
+	Name           string `json:"name"`
+	Version        string `json:"version"`
+	Commit         string `json:"commit"`
+	BuildDate      string `json:"buildDate"`
+	GoVersion      string `json:"goVersion"`
+	OS             string `json:"os"`
+	Arch           string `json:"arch"`
+	DataDir        string `json:"dataDir"`
+	LogsDir        string `json:"logsDir"`
+	CoreLogsDir    string `json:"coreLogsDir"`
+	DiagnosticsDir string `json:"diagnosticsDir"`
 }
 
 // CoreStatus reports whether the MaaCore runtime is present.
@@ -60,15 +63,17 @@ type CoreStatus struct {
 // GetAppInfo returns build and environment metadata for the About page.
 func (s *Service) GetAppInfo() AppInfo {
 	return AppInfo{
-		Name:      "MaaGO",
-		Version:   MaaVersion.Version,
-		Commit:    MaaVersion.Commit,
-		BuildDate: MaaVersion.BuildDate,
-		GoVersion: runtime.Version(),
-		OS:        runtime.GOOS,
-		Arch:      runtime.GOARCH,
-		DataDir:   apppath.Root(),
-		LogsDir:   apppath.LogsDir(),
+		Name:           "MaaGO",
+		Version:        MaaVersion.Version,
+		Commit:         MaaVersion.Commit,
+		BuildDate:      MaaVersion.BuildDate,
+		GoVersion:      runtime.Version(),
+		OS:             runtime.GOOS,
+		Arch:           runtime.GOARCH,
+		DataDir:        apppath.Root(),
+		LogsDir:        apppath.LogsDir(),
+		CoreLogsDir:    apppath.CoreLogsDir(),
+		DiagnosticsDir: apppath.DiagnosticsDir(),
 	}
 }
 
@@ -144,11 +149,44 @@ func (s *Service) GetCoreStatus() CoreStatus {
 	}
 }
 
-// TestConnection checks whether one emulator ADB endpoint is reachable.
-func (s *Service) TestConnection(address string) connection.TestResult {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+// DiagnoseConnection runs the staged ADB / MaaCore / screenshot / touch checks.
+func (s *Service) DiagnoseConnection(address string) diagnostics.Result {
+	if s.runner != nil && s.runner.Busy() {
+		return diagnostics.Result{
+			Address: address,
+			Message: "stop the running queue first",
+			Steps: []diagnostics.Step{{
+				Key:    diagnostics.StepCore,
+				Status: diagnostics.StatusFail,
+				Detail: "a task queue is currently running",
+			}},
+		}
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return diagnostics.Result{
+			Address: address,
+			Message: err.Error(),
+			Steps: []diagnostics.Step{{
+				Key:    diagnostics.StepCore,
+				Status: diagnostics.StatusFail,
+				Detail: err.Error(),
+			}},
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	return connection.Test(ctx, address)
+	return diagnostics.Run(ctx, s.core, cfg, address)
+}
+
+// OpenCoreLogsDir opens the date-rotated MaaCore log directory.
+func (s *Service) OpenCoreLogsDir() error {
+	return openPath(apppath.CoreLogsDir())
+}
+
+// OpenDiagnosticsDir opens the diagnostic screenshot directory.
+func (s *Service) OpenDiagnosticsDir() error {
+	return openPath(apppath.DiagnosticsDir())
 }
 
 // DetectConnection scans common emulator ports.

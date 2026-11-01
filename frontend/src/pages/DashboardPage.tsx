@@ -16,13 +16,14 @@ import { useState } from "react";
 import { LogConsole } from "@/components/LogConsole";
 import { PageHeader } from "@/components/PageHeader";
 import { ProgressBar } from "@/components/ProgressBar";
+import { DiagnosticSteps } from "@/components/DiagnosticSteps";
 import { TaskIcon } from "@/components/TaskIcon";
 import { TaskToggle } from "@/components/TaskToggle";
 import { TASK_META_BY_TYPE } from "@/data/tasks";
 import { taskDisplayName } from "@/data/taskSummary";
 import { ROUTES } from "@/constants/routes";
 import { useAppStore } from "@/store/AppStore";
-import type { ConnectionCandidate, ConnectionTestResult } from "@/types/maa";
+import type { ConnectionCandidate, DiagnosticResult } from "@/types/maa";
 import { cn } from "@/utils/cn";
 import { formatCountdown, formatDateTime, formatDuration } from "@/utils/format";
 import { pickText } from "@/utils/text";
@@ -56,18 +57,17 @@ export const DashboardPage = () => {
     core,
     startQueue,
     stopQueue,
-    testConnection,
+    diagnoseConnection,
     detectConnection,
     openLogsDir,
   } = useAppStore();
 
   const language = i18n.resolvedLanguage;
   const [testing, setTesting] = useState(false);
-  const [testingAddress, setTestingAddress] = useState("");
   const [detecting, setDetecting] = useState(false);
   const [candidates, setCandidates] = useState<ConnectionCandidate[]>([]);
   const [hasDetected, setHasDetected] = useState(false);
-  const [result, setResult] = useState<ConnectionTestResult | null>(null);
+  const [diagnosis, setDiagnosis] = useState<DiagnosticResult | null>(null);
 
   const running = run.status === "running" || run.status === "stopping";
   const enabledCount = config.tasks.filter((task) => task.enabled).length;
@@ -75,9 +75,8 @@ export const DashboardPage = () => {
   const handleTest = async () => {
     const address = config.connection.address.trim();
     setTesting(true);
-    setTestingAddress(address);
     try {
-      setResult(await testConnection(address));
+      setDiagnosis(await diagnoseConnection(address));
     } finally {
       setTesting(false);
     }
@@ -98,17 +97,11 @@ export const DashboardPage = () => {
       ...previous,
       connection: { ...previous.connection, address: candidate.address },
     }));
-    setTestingAddress(candidate.address);
-    setResult({
-      ok: true,
-      address: candidate.address,
-      latencyMs: candidate.latencyMs,
-      message: `${candidate.name} · ${candidate.address}`,
-    });
+    setDiagnosis(null);
   };
 
-  const hasResult = Boolean(result);
-  const connectionOk = Boolean(result?.ok);
+  const hasResult = Boolean(diagnosis);
+  const connectionOk = Boolean(diagnosis?.ok);
 
   return (
     <div className="scrollbar-hide h-full w-full overflow-y-auto px-4 pb-4 pt-[var(--content-pt)]">
@@ -256,19 +249,7 @@ export const DashboardPage = () => {
               </button>
             </div>
 
-            {result && (
-              <p
-                className={cn(
-                  "mt-2 rounded-xl px-3 py-2 text-[11px] leading-relaxed",
-                  result.ok
-                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                    : "bg-red-500/10 text-red-700 dark:text-red-300",
-                )}
-              >
-                {testingAddress && <span className="font-mono">{testingAddress} · </span>}
-                {result.message}
-              </p>
-            )}
+            <DiagnosticSteps result={diagnosis} running={testing} />
 
             {candidates.length > 0 && (
               <div className="mt-2 flex flex-col gap-1">

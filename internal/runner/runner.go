@@ -18,6 +18,7 @@ import (
 
 	"MaaGO/internal/apppath"
 	"MaaGO/internal/config"
+	"MaaGO/internal/corelog"
 	"MaaGO/internal/maa"
 )
 
@@ -94,18 +95,20 @@ type Runner struct {
 	notify   func(title, message string)
 	logFile  *os.File
 	core     *maa.Core
+	coreLog  *corelog.Writer
 
 	logMu sync.Mutex
 }
 
 // New creates a runner. emit and onFinish may be nil in tests.
-func New(emit EmitFunc, onFinish FinishFunc, notify func(title, message string), core *maa.Core) *Runner {
+func New(emit EmitFunc, onFinish FinishFunc, notify func(title, message string), core *maa.Core, coreLog *corelog.Writer) *Runner {
 	r := &Runner{
 		state:    RunState{Status: StatusIdle, Demo: core == nil || !core.Available()},
 		emit:     emit,
 		onFinish: onFinish,
 		notify:   notify,
 		core:     core,
+		coreLog:  coreLog,
 		logs:     make([]LogEntry, 0, 256),
 	}
 	path := filepath.Join(apppath.LogsDir(), "run.log")
@@ -377,6 +380,15 @@ func (r *Runner) complete(status Status, message string, completed, total int) {
 	r.emitState(state)
 	r.SystemLog("info", fmt.Sprintf("任务队列结束：%s（%d/%d）", state.Message, completed, total))
 	r.SystemLog("info", "========================================")
+
+	if !state.Demo && r.coreLog != nil {
+		started, _ := time.Parse(time.RFC3339, state.StartedAt)
+		duration := time.Duration(0)
+		if !started.IsZero() {
+			duration = time.Since(started)
+		}
+		r.coreLog.EndSession(string(status), message, duration)
+	}
 
 	_ = config.Update(func(c *config.AppConfig) {
 		started, _ := time.Parse(time.RFC3339, state.StartedAt)

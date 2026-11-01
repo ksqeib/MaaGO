@@ -159,6 +159,8 @@ export interface AppInfo {
   arch: string;
   dataDir: string;
   logsDir: string;
+  coreLogsDir: string;
+  diagnosticsDir: string;
 }
 
 export interface ConnectionCandidate {
@@ -167,10 +169,30 @@ export interface ConnectionCandidate {
   latencyMs: number;
 }
 
-export interface ConnectionTestResult {
+export interface DiagnosticStep {
+  key: string;
+  status: "ok" | "fail" | "skip";
+  detail: string;
+  durationMs: number;
+}
+
+export interface DiagnosticSystemInfo {
+  address: string;
+  adbPath: string;
+  serial: string;
+  androidVersion: string;
+  resolution: string;
+  density: string;
+  uuid: string;
+  screenshotPath: string;
+  screenshotSize: number;
+}
+
+export interface DiagnosticResult {
   ok: boolean;
   address: string;
-  latencyMs: number;
+  steps: DiagnosticStep[];
+  system: DiagnosticSystemInfo;
   message: string;
 }
 

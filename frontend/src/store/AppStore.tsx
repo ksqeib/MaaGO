@@ -16,8 +16,8 @@ import type {
   AppConfig,
   AppInfo,
   ConnectionCandidate,
-  ConnectionTestResult,
   CoreStatus,
+  DiagnosticResult,
   LogEntry,
   RunState,
   ScheduleStatus,
@@ -43,19 +43,21 @@ interface AppStoreValue {
   stopQueue: () => Promise<void>;
   startTask: (taskId: string) => Promise<void>;
   clearLogs: () => void;
-  testConnection: (address: string) => Promise<ConnectionTestResult>;
+  diagnoseConnection: (address: string) => Promise<DiagnosticResult>;
   detectConnection: () => Promise<ConnectionCandidate[]>;
   testNotification: () => Promise<void>;
   refreshSchedule: () => Promise<void>;
   openDataDir: () => void;
   openLogsDir: () => void;
+  openCoreLogsDir: () => void;
+  openDiagnosticsDir: () => void;
 }
 
 const AppStoreContext = createContext<AppStoreValue | null>(null);
 
 const CONFIG_FALLBACK_KEY = "maago.config";
 
-function withTimeout<T>(promise: Promise<T>, fallback: T, ms = 1500): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, fallback: T, ms = 5000): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((resolve) => {
@@ -295,11 +297,35 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     void api.ClearLogs().catch(() => undefined);
   }, []);
 
-  const testConnection = useCallback(async (address: string) => {
+  const diagnoseConnection = useCallback(async (address: string) => {
+    const fallback: DiagnosticResult = {
+      ok: false,
+      address,
+      steps: [
+        {
+          key: "core",
+          status: "fail",
+          detail: "backend is unavailable",
+          durationMs: 0,
+        },
+      ],
+      system: {
+        address,
+        adbPath: "",
+        serial: "",
+        androidVersion: "",
+        resolution: "",
+        density: "",
+        uuid: "",
+        screenshotPath: "",
+        screenshotSize: 0,
+      },
+      message: "backend is unavailable",
+    };
     return withTimeout(
-      api.TestConnection(address) as unknown as Promise<ConnectionTestResult>,
-      { ok: false, address, latencyMs: 0, message: "当前环境无法连接后端" },
-      4000,
+      api.DiagnoseConnection(address) as unknown as Promise<DiagnosticResult>,
+      fallback,
+      95000,
     );
   }, []);
 
@@ -331,6 +357,14 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     void api.OpenLogsDir().catch(() => undefined);
   }, []);
 
+  const openCoreLogsDir = useCallback(() => {
+    void api.OpenCoreLogsDir().catch(() => undefined);
+  }, []);
+
+  const openDiagnosticsDir = useCallback(() => {
+    void api.OpenDiagnosticsDir().catch(() => undefined);
+  }, []);
+
   const value: AppStoreValue = {
     config,
     updateConfig,
@@ -348,12 +382,14 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     stopQueue,
     startTask,
     clearLogs,
-    testConnection,
+    diagnoseConnection,
     detectConnection,
     testNotification,
     refreshSchedule,
     openDataDir,
     openLogsDir,
+    openCoreLogsDir,
+    openDiagnosticsDir,
   };
 
   return (

@@ -70,7 +70,7 @@
     "connection_failed": "连接失败",
     "address": "连接地址",
     "address_placeholder": "例如 127.0.0.1:16384",
-    "test_connection": "测试连接",
+    "test_connection": "连接诊断",
     "detect_emulators": "检测模拟器",
     "candidates": "检测到的模拟器",
     "no_candidates": "没有发现可用的模拟器端口",
@@ -132,6 +132,7 @@
     "auto_scroll": "自动滚动",
     "clear": "清空",
     "open_dir": "打开日志目录",
+    "core_dir": "核心日志",
     "count": "{{count}} 条"
   },
   "settings": {
@@ -154,7 +155,7 @@
       "emulator": "模拟器",
       "touch_mode": "触控模式",
       "screenshot_enhance": "截图增强",
-      "test": "测试连接",
+      "test": "连接诊断",
       "detect": "检测模拟器",
       "candidates": "检测结果",
       "no_candidates": "没有发现可用的模拟器端口",
@@ -223,7 +224,9 @@
       "available": "MaaCore 已加载",
       "missing": "未找到 MaaCore",
       "demo": "调用层尚未接入，当前为界面演示模式。",
-      "path": "路径"
+      "path": "路径",
+      "open_logs": "核心日志",
+      "open_screenshots": "截图目录"
     },
     "saved": "设置已自动保存"
   },
@@ -256,5 +259,21 @@
     "success": "成功",
     "warn": "警告",
     "error": "错误"
+  },
+  "diag": {
+    "running": "正在逐项检查：ADB → 设备 → 连接 → 系统信息 → 截图 → 触控…",
+    "passed": "全部检查通过",
+    "failed": "存在未通过项",
+    "blocked": "因上一步未通过而跳过",
+    "duration": "{{ms}} ms",
+    "step": {
+      "core": "MaaCore",
+      "adb": "ADB 可执行文件",
+      "device": "ADB 设备",
+      "connect": "MaaCore 连接",
+      "system": "系统信息",
+      "screenshot": "截图测试",
+      "touch": "触控测试"
+    }
   }
 }

@@ -70,7 +70,7 @@
     "connection_failed": "Connection failed",
     "address": "Address",
     "address_placeholder": "e.g. 127.0.0.1:16384",
-    "test_connection": "Test connection",
+    "test_connection": "Diagnose connection",
     "detect_emulators": "Detect emulators",
     "candidates": "Detected emulators",
     "no_candidates": "No emulator ports were found",
@@ -132,6 +132,7 @@
     "auto_scroll": "Auto scroll",
     "clear": "Clear",
     "open_dir": "Open log folder",
+    "core_dir": "Core logs",
     "count": "{{count}} entries"
   },
   "settings": {
@@ -154,7 +155,7 @@
       "emulator": "Emulator",
       "touch_mode": "Touch mode",
       "screenshot_enhance": "Screenshot enhancement",
-      "test": "Test connection",
+      "test": "Diagnose connection",
       "detect": "Detect emulators",
       "candidates": "Detected",
       "no_candidates": "No emulator ports were found",
@@ -223,7 +224,9 @@
       "available": "MaaCore loaded",
       "missing": "MaaCore not found",
       "demo": "The call layer is not wired in yet; this is demo mode.",
-      "path": "Path"
+      "path": "Path",
+      "open_logs": "Core logs",
+      "open_screenshots": "Screenshots"
     },
     "saved": "Settings are saved automatically"
   },
@@ -256,5 +259,21 @@
     "success": "Success",
     "warn": "Warning",
     "error": "Error"
+  },
+  "diag": {
+    "running": "Checking step by step: ADB → device → connect → system → screenshot → touch…",
+    "passed": "All checks passed",
+    "failed": "Some checks failed",
+    "blocked": "Skipped because an earlier step failed",
+    "duration": "{{ms}} ms",
+    "step": {
+      "core": "MaaCore",
+      "adb": "ADB executable",
+      "device": "ADB device",
+      "connect": "MaaCore connection",
+      "system": "System info",
+      "screenshot": "Screenshot test",
+      "touch": "Touch test"
+    }
   }
 }

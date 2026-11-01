@@ -36,7 +36,7 @@ func TestCoreRunnerRequiresAddress(t *testing.T) {
 		t.Skipf("MaaCore unavailable: %v", core.Err())
 	}
 
-	r := New(nil, nil, nil, core)
+	r := New(nil, nil, nil, core, nil)
 	defer r.Close()
 	if err := r.Start(); err != nil {
 		t.Fatal(err)

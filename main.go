@@ -8,12 +8,14 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"MaaGO/internal/app"
 	"MaaGO/internal/apppath"
 	"MaaGO/internal/config"
+	"MaaGO/internal/corelog"
 	"MaaGO/internal/lifecycle"
 	"MaaGO/internal/maa"
 	"MaaGO/internal/notify"
@@ -107,8 +109,20 @@ func main() {
 		}
 	}
 
+	coreLogs := corelog.New(apppath.CoreLogsDir())
+	defer coreLogs.Close()
+	if capture, err := maa.StartStdoutCapture(coreLogs); err != nil {
+		log.Printf("startup: MaaCore stdout capture: %v", err)
+	} else {
+		defer capture.Stop()
+	}
+
 	core := maa.New()
 	if core.Available() {
+		userDir := filepath.Join(apppath.Root(), "core")
+		if err := core.SetUserDir(userDir); err != nil {
+			log.Printf("startup: MaaCore user dir: %v", err)
+		}
 		if err := core.LoadResource(); err != nil {
 			log.Printf("startup: MaaCore resource: %v", err)
 		} else {
@@ -118,7 +132,7 @@ func main() {
 		log.Printf("startup: MaaCore unavailable: %v", core.Err())
 	}
 
-	taskRunner := runner.New(emit, nil, sendNotification, core)
+	taskRunner := runner.New(emit, nil, sendNotification, core, coreLogs)
 	defer taskRunner.Close()
 
 	taskScheduler := scheduler.New(taskRunner, emit, sendNotification)

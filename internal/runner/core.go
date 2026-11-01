@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"MaaGO/internal/config"
 	"MaaGO/internal/connection"
+	"MaaGO/internal/corelog"
 	"MaaGO/internal/maa"
 )
 
@@ -25,6 +29,33 @@ type coreDetails struct {
 func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg config.AppConfig) {
 	defer r.finishRun()
 
+	if r.coreLog != nil {
+		names := make([]string, 0, len(tasks))
+		for _, task := range tasks {
+			names = append(names, taskDisplayName(task))
+		}
+		version := ""
+		if r.core != nil {
+			version = r.core.Version()
+		}
+		r.coreLog.BeginSession(corelog.Session{Version: version, TaskNames: names})
+	}
+
+	tailCtx, tailCancel := context.WithCancel(context.Background())
+	tailDone := make(chan struct{})
+	go func() {
+		defer close(tailDone)
+		r.tailCoreFile(tailCtx)
+	}()
+	var tailOnce sync.Once
+	stopTail := func() {
+		tailOnce.Do(func() {
+			tailCancel()
+			<-tailDone
+		})
+	}
+	defer stopTail()
+
 	messages := make(chan maa.Message, 1024)
 	maa.SetMessageHandler(func(message maa.Message) {
 		select {
@@ -37,6 +68,7 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 
 	total := len(tasks)
 	fail := func(message string) {
+		stopTail()
 		r.SystemLog("error", message)
 		r.complete(StatusFailed, message, 0, total)
 	}
@@ -97,6 +129,10 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 	configName := maa.ConnectionConfigName(cfg.Connection.Emulator)
 	r.SystemLog("info", fmt.Sprintf("连接设备：%s（配置：%s）", address, configName))
 	r.SystemLog("info", fmt.Sprintf("ADB：%s", adbPath))
+	if r.coreLog != nil {
+		r.coreLog.Meta("address", address)
+		r.coreLog.Meta("adb", adbPath)
+	}
 	connected, err := r.core.Connect(handle, adbPath, address, configName)
 	if err != nil || !connected {
 		if err == nil {
@@ -280,14 +316,90 @@ loop:
 
 	switch {
 	case anyError:
+		stopTail()
 		r.complete(StatusFailed, "任务执行过程中出现错误", completed, total)
 	case stopRequested:
+		stopTail()
 		r.complete(StatusStopped, "任务已停止", completed, total)
 	case completed >= total:
+		stopTail()
 		r.complete(StatusSuccess, "全部任务完成", completed, total)
 	default:
+		stopTail()
 		r.complete(StatusFailed, "部分任务未完成", completed, total)
 	}
+}
+
+// tailCoreFile mirrors MaaCore's raw asst.log into the date-rotated core log.
+// The release build logs to this file rather than stdout.
+func (r *Runner) tailCoreFile(ctx context.Context) {
+	if r.coreLog == nil || r.core == nil {
+		return
+	}
+	path := r.core.DebugLogPath()
+	offset := fileSize(path)
+	pending := ""
+
+	readNew := func() {
+		file, err := os.Open(path)
+		if err != nil {
+			return
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil {
+			return
+		}
+		if info.Size() < offset {
+			offset = 0
+		}
+		if info.Size() == offset {
+			return
+		}
+		if _, err := file.Seek(offset, 0); err != nil {
+			return
+		}
+		data, err := io.ReadAll(file)
+		if err != nil {
+			return
+		}
+		offset = info.Size()
+		pending += string(data)
+		for {
+			index := strings.IndexByte(pending, '\n')
+			if index < 0 {
+				break
+			}
+			line := strings.TrimRight(pending[:index], "\r")
+			pending = pending[index+1:]
+			if line != "" {
+				r.coreLog.WriteLine(line)
+			}
+		}
+	}
+
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			readNew()
+			if strings.TrimSpace(pending) != "" {
+				r.coreLog.WriteLine(pending)
+			}
+			return
+		case <-ticker.C:
+			readNew()
+		}
+	}
+}
+
+func fileSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
 }
 
 func (r *Runner) updateCoreProgress(finished, total int) {

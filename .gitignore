@@ -18,6 +18,8 @@
 /core/*.dll
 /core/adb/
 /core/resource/
+/core/debug/
+/core/cache/
 
 # Editor / OS
 .DS_Store

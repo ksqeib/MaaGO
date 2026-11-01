@@ -70,6 +70,20 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1
 
 > 真实运行会操作游戏。首次测试建议只启用“开始唤醒”或“领取奖励”，确认连接和截图正常后再启用完整队列。
 
+## 连接诊断
+
+“测试连接”已改为逐项诊断，不会只给一个“截图失败”：
+
+1. `MaaCore`：DLL 与 `resource/` 是否加载
+2. `ADB`：定位 `adb.exe`
+3. `ADB 设备`：`adb devices`，必要时先 `adb connect`
+4. `MaaCore 连接`：`AsstConnect`
+5. `系统信息`：Android 版本、分辨率、DPI、设备 UUID（`adb shell` + `AsstGetUUID`）
+6. `截图测试`：`AsstAsyncScreencap` + `AsstGetImage`，保存 PNG 到诊断目录
+7. `触控测试`：点击 `(10,10)`，再做一次截图确认界面仍可读
+
+每一步都会显示状态、耗时和具体错误；前置步骤失败时，后续步骤标记为“因上一步未通过而跳过”。
+
 ## 开发
 
 要求：
@@ -93,6 +107,11 @@ wails3 task dev
 - 配置：`%APPDATA%\MaaGO\config.json`
 - 启动日志：`%APPDATA%\MaaGO\logs\startup.log`
 - 任务日志：`%APPDATA%\MaaGO\logs\run.log`
+- 核心日志：`%APPDATA%\MaaGO\logs\core\core-YYYY-MM-DD.log`
+  - 按日期自动切换文件，保留最近 14 天
+  - 每次真实运行前写入会话分隔符、版本、地址、ADB、任务顺序
+  - 官方 Release 的 MaaCore 日志写入 `debug/asst.log`，不是 stdout；程序会同时保留 stdout 管道，并把 asst.log 的新增内容实时镜像到按日期滚动的核心日志
+- 诊断截图：`%APPDATA%\MaaGO\cache\diagnostics\`
 
 ## 目录结构
 

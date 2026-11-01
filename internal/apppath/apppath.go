@@ -66,6 +66,20 @@ func StartupLogPath() string {
 	return filepath.Join(LogsDir(), "startup.log")
 }
 
+// CoreLogsDir stores the date-rotated MaaCore stdout logs.
+func CoreLogsDir() string {
+	dir := filepath.Join(LogsDir(), "core")
+	_ = os.MkdirAll(dir, 0o755)
+	return dir
+}
+
+// DiagnosticsDir stores connection diagnostic screenshots.
+func DiagnosticsDir() string {
+	dir := filepath.Join(CacheDir(), "diagnostics")
+	_ = os.MkdirAll(dir, 0o755)
+	return dir
+}
+
 // InstallDir is where the MaaCore runtime and resources are expected. It is a
 // placeholder until the core runtime layout is decided.
 func InstallDir() string {

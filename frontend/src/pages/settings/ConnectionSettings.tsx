@@ -4,8 +4,9 @@ import { FaPlug, FaSyncAlt } from "react-icons/fa";
 
 import { SectionCard, SettingRow } from "@/components/SettingRow";
 import { Switch } from "@/components/Switch";
+import { DiagnosticSteps } from "@/components/DiagnosticSteps";
 import { useAppStore } from "@/store/AppStore";
-import type { ConnectionCandidate, ConnectionTestResult } from "@/types/maa";
+import type { ConnectionCandidate, DiagnosticResult } from "@/types/maa";
 import { cn } from "@/utils/cn";
 
 const emulators = [
@@ -20,10 +21,10 @@ const emulators = [
 
 export const ConnectionSettings = () => {
   const { t, i18n } = useTranslation();
-  const { config, updateConfig, core, testConnection, detectConnection } = useAppStore();
+  const { config, updateConfig, core, diagnoseConnection, detectConnection, openCoreLogsDir, openDiagnosticsDir } = useAppStore();
   const [testing, setTesting] = useState(false);
   const [detecting, setDetecting] = useState(false);
-  const [result, setResult] = useState<ConnectionTestResult | null>(null);
+  const [diagnosis, setDiagnosis] = useState<DiagnosticResult | null>(null);
   const [candidates, setCandidates] = useState<ConnectionCandidate[]>([]);
   const [hasDetected, setHasDetected] = useState(false);
   const isZh = String(i18n.resolvedLanguage || "").startsWith("zh");
@@ -64,6 +65,22 @@ export const ConnectionSettings = () => {
             {core.path}
           </p>
         )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            className="rounded-full bg-surface-secondary px-3 py-1.5 text-[10px] font-medium text-muted hover:text-foreground"
+            onClick={openCoreLogsDir}
+            type="button"
+          >
+            {t("settings.core.open_logs")}
+          </button>
+          <button
+            className="rounded-full bg-surface-secondary px-3 py-1.5 text-[10px] font-medium text-muted hover:text-foreground"
+            onClick={openDiagnosticsDir}
+            type="button"
+          >
+            {t("settings.core.open_screenshots")}
+          </button>
+        </div>
       </SectionCard>
 
       <SectionCard title={t("settings.tabs.connection")}>
@@ -111,8 +128,8 @@ export const ConnectionSettings = () => {
             disabled={testing}
             onClick={() => {
               setTesting(true);
-              void testConnection(config.connection.address)
-                .then(setResult)
+              void diagnoseConnection(config.connection.address)
+                .then(setDiagnosis)
                 .finally(() => setTesting(false));
             }}
             type="button"
@@ -139,18 +156,7 @@ export const ConnectionSettings = () => {
           </button>
         </div>
 
-        {result && (
-          <p
-            className={cn(
-              "rounded-xl px-3 py-2 text-[11px]",
-              result.ok
-                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                : "bg-red-500/10 text-red-700 dark:text-red-300",
-            )}
-          >
-            {result.address} · {result.message}
-          </p>
-        )}
+        {diagnosis && <DiagnosticSteps result={diagnosis} running={testing} />}
 
         {candidates.length > 0 && (
           <div className="mt-2 flex flex-col gap-1.5">
@@ -170,12 +176,7 @@ export const ConnectionSettings = () => {
                   className="rounded-full bg-brand-500/10 px-3 py-1 text-[10px] font-semibold text-brand-600 dark:text-brand-400"
                   onClick={() => {
                     updateConnection({ address: candidate.address, autoDetect: true });
-                    setResult({
-                      ok: true,
-                      address: candidate.address,
-                      latencyMs: candidate.latencyMs,
-                      message: candidate.name,
-                    });
+                    setDiagnosis(null);
                   }}
                   type="button"
                 >

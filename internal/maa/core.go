@@ -83,6 +83,7 @@ func coreCallback(msg uintptr, details uintptr, _ uintptr) uintptr {
 // Core owns the MaaCore DLL handle and resolved functions.
 type Core struct {
 	dir     string
+	userDir string
 	dll     windows.Handle
 	procs   map[string]uintptr
 	version string
@@ -120,6 +121,42 @@ func (c *Core) Dir() string {
 		return ""
 	}
 	return c.dir
+}
+
+// SetUserDir sets MaaCore's user directory, which holds its debug log and
+// caches. It must be called before LoadResource.
+func (c *Core) SetUserDir(path string) error {
+	if !c.Available() {
+		return c.Err()
+	}
+	if err := os.MkdirAll(filepath.Join(path, "debug"), 0o755); err != nil {
+		return err
+	}
+	ok, err := c.callBool("AsstSetUserDir", path)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("AsstSetUserDir rejected %s", path)
+	}
+	c.userDir = path
+	return nil
+}
+
+// UserDir returns the configured user directory.
+func (c *Core) UserDir() string {
+	if c == nil {
+		return ""
+	}
+	if c.userDir != "" {
+		return c.userDir
+	}
+	return c.dir
+}
+
+// DebugLogPath is MaaCore's own raw log file.
+func (c *Core) DebugLogPath() string {
+	return filepath.Join(c.UserDir(), "debug", "asst.log")
 }
 
 // Available reports whether the DLL and all required exports loaded.
@@ -196,6 +233,11 @@ func (c *Core) load() {
 		"AsstRunning",
 		"AsstConnected",
 		"AsstGetVersion",
+		"AsstAsyncScreencap",
+		"AsstAsyncClick",
+		"AsstGetImage",
+		"AsstGetUUID",
+		"AsstGetNullSize",
 	}
 	for _, name := range exports {
 		addr, err := windows.GetProcAddress(dll, name)
@@ -364,6 +406,95 @@ func (c *Core) Running(handle Handle) bool {
 func (c *Core) Connected(handle Handle) bool {
 	ok, _ := c.callBoolHandle("AsstConnected", handle)
 	return ok
+}
+
+// AsyncScreencap requests a screenshot. With block=true it returns after the
+// frame is ready.
+func (c *Core) AsyncScreencap(handle Handle, block bool) (int32, error) {
+	addr, err := c.proc("AsstAsyncScreencap")
+	if err != nil {
+		return 0, err
+	}
+	result, _, _ := syscall.SyscallN(addr, uintptr(handle), boolPtr(block))
+	return int32(result), nil
+}
+
+// AsyncClick sends one tap. With block=true it returns after the tap.
+func (c *Core) AsyncClick(handle Handle, x, y int32, block bool) (int32, error) {
+	addr, err := c.proc("AsstAsyncClick")
+	if err != nil {
+		return 0, err
+	}
+	result, _, _ := syscall.SyscallN(
+		addr,
+		uintptr(handle),
+		uintptr(x),
+		uintptr(y),
+		boolPtr(block),
+	)
+	return int32(result), nil
+}
+
+// GetImage copies the cached PNG frame into buffer.
+func (c *Core) GetImage(handle Handle, buffer []byte) (int, error) {
+	if len(buffer) == 0 {
+		return 0, errors.New("image buffer is empty")
+	}
+	addr, err := c.proc("AsstGetImage")
+	if err != nil {
+		return 0, err
+	}
+	result, _, _ := syscall.SyscallN(
+		addr,
+		uintptr(handle),
+		uintptr(unsafe.Pointer(&buffer[0])),
+		uintptr(len(buffer)),
+	)
+	if result == c.nullSize() {
+		return 0, errors.New("AsstGetImage returned no data")
+	}
+	if int(result) > len(buffer) {
+		return 0, errors.New("AsstGetImage returned an oversized frame")
+	}
+	return int(result), nil
+}
+
+// GetUUID returns the device UUID reported by MaaCore.
+func (c *Core) GetUUID(handle Handle) (string, error) {
+	addr, err := c.proc("AsstGetUUID")
+	if err != nil {
+		return "", err
+	}
+	buffer := make([]byte, 256)
+	result, _, _ := syscall.SyscallN(
+		addr,
+		uintptr(handle),
+		uintptr(unsafe.Pointer(&buffer[0])),
+		uintptr(len(buffer)),
+	)
+	if result == c.nullSize() || result == 0 {
+		return "", errors.New("AsstGetUUID returned no data")
+	}
+	if int(result) > len(buffer) {
+		return "", errors.New("AsstGetUUID returned an oversized value")
+	}
+	return strings.TrimRight(string(buffer[:result]), "\x00"), nil
+}
+
+func (c *Core) nullSize() uintptr {
+	addr, err := c.proc("AsstGetNullSize")
+	if err != nil {
+		return ^uintptr(0)
+	}
+	result, _, _ := syscall.SyscallN(addr)
+	return result
+}
+
+func boolPtr(value bool) uintptr {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func (c *Core) callBool(name, value string) (bool, error) {

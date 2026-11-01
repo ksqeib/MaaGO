@@ -27,7 +27,7 @@ func TestStartQueueCompletesAndRecordsLastRun(t *testing.T) {
 		t.Fatalf("seed config: %v", err)
 	}
 
-	r := runner.New(nil, nil, nil, nil)
+	r := runner.New(nil, nil, nil, nil, nil)
 	defer r.Close()
 	service := app.NewService(r, scheduler.New(r, nil, nil), nil, nil)
 
