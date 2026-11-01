@@ -71,6 +71,16 @@ export interface NotificationConfig {
   onSchedule: boolean;
 }
 
+export interface ProxyConfig {
+  enabled: boolean;
+  url: string;
+}
+
+export interface UpdateConfig {
+  mirror: string;
+  targetVersion: string;
+}
+
 export interface LastRun {
   startedAt: string;
   finishedAt: string;
@@ -95,6 +105,8 @@ export interface AppConfig {
   run: RunConfig;
   schedule: ScheduleConfig;
   notification: NotificationConfig;
+  proxy: ProxyConfig;
+  update: UpdateConfig;
   tasks: TaskConfig[];
   lastRun: LastRun;
 }
@@ -193,6 +205,33 @@ export interface DiagnosticResult {
   address: string;
   steps: DiagnosticStep[];
   system: DiagnosticSystemInfo;
+  message: string;
+}
+
+export interface ReleaseInfo {
+  tag: string;
+  version: string;
+  assetName: string;
+  assetUrl: string;
+  size: number;
+  published: string;
+}
+
+export interface UpdateStatus {
+  stage: "idle" | "checking" | "downloading" | "extracting" | "ready" | "error" | string;
+  message: string;
+  progress: number;
+  downloaded: number;
+  total: number;
+  version: string;
+  needsRestart: boolean;
+  error: string;
+}
+
+export interface ProxyTestResult {
+  ok: boolean;
+  status: number;
+  latencyMs: number;
   message: string;
 }
 

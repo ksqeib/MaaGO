@@ -2,7 +2,7 @@ import { defaultTasks } from "@/data/tasks";
 import type { AppConfig } from "@/types/maa";
 
 export const DEFAULT_CONFIG: AppConfig = {
-  configVersion: 3,
+  configVersion: 4,
   windowWidth: 1100,
   windowHeight: 720,
   windowMaximised: false,
@@ -46,6 +46,14 @@ export const DEFAULT_CONFIG: AppConfig = {
     onComplete: true,
     onError: true,
     onSchedule: true,
+  },
+  proxy: {
+    enabled: false,
+    url: "",
+  },
+  update: {
+    mirror: "",
+    targetVersion: "",
   },
   tasks: defaultTasks(),
   lastRun: {

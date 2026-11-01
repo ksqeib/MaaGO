@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import {
   FaBell,
   FaClock,
+  FaCloudDownloadAlt,
   FaDesktop,
   FaPalette,
   FaPlayCircle,
@@ -20,8 +21,9 @@ import { NotificationSettings } from "./settings/NotificationSettings";
 import { RunSettings } from "./settings/RunSettings";
 import { ScheduleSettings } from "./settings/ScheduleSettings";
 import { TraySettings } from "./settings/TraySettings";
+import { UpdateSettings } from "./settings/UpdateSettings";
 
-type TabKey = "connection" | "run" | "schedule" | "notification" | "appearance" | "tray";
+type TabKey = "connection" | "run" | "schedule" | "notification" | "appearance" | "tray" | "update";
 
 const tabs: { key: TabKey; icon: ReactNode }[] = [
   { key: "connection", icon: <FaPlug /> },
@@ -30,6 +32,7 @@ const tabs: { key: TabKey; icon: ReactNode }[] = [
   { key: "notification", icon: <FaBell /> },
   { key: "appearance", icon: <FaPalette /> },
   { key: "tray", icon: <FaDesktop /> },
+  { key: "update", icon: <FaCloudDownloadAlt /> },
 ];
 
 export const SettingsPage = () => {
@@ -49,6 +52,8 @@ export const SettingsPage = () => {
         return <AppearanceSettings />;
       case "tray":
         return <TraySettings />;
+      case "update":
+        return <UpdateSettings />;
       default:
         return <ConnectionSettings />;
     }

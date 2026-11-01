@@ -29,7 +29,7 @@ func TestStartQueueCompletesAndRecordsLastRun(t *testing.T) {
 
 	r := runner.New(nil, nil, nil, nil, nil)
 	defer r.Close()
-	service := app.NewService(r, scheduler.New(r, nil, nil), nil, nil)
+	service := app.NewService(r, scheduler.New(r, nil, nil), nil, nil, nil)
 
 	if err := service.StartQueue(); err != nil {
 		t.Fatalf("start queue: %v", err)

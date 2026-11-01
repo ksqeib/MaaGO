@@ -19,9 +19,12 @@ import type {
   CoreStatus,
   DiagnosticResult,
   LogEntry,
+  ProxyTestResult,
+  ReleaseInfo,
   RunState,
   ScheduleStatus,
   TaskState,
+  UpdateStatus,
 } from "@/types/maa";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -37,6 +40,7 @@ interface AppStoreValue {
   schedule: ScheduleStatus | null;
   core: CoreStatus | null;
   appInfo: AppInfo | null;
+  updateStatus: UpdateStatus | null;
   error: string;
   clearError: () => void;
   startQueue: () => Promise<void>;
@@ -51,6 +55,12 @@ interface AppStoreValue {
   openLogsDir: () => void;
   openCoreLogsDir: () => void;
   openDiagnosticsDir: () => void;
+  checkCoreUpdate: () => Promise<ReleaseInfo | null>;
+  startCoreUpdate: (version: string) => Promise<void>;
+  startResourceUpdate: () => Promise<void>;
+  testProxy: (url: string) => Promise<ProxyTestResult>;
+  restartApp: () => Promise<void>;
+  openUpdatesDir: () => void;
 }
 
 const AppStoreContext = createContext<AppStoreValue | null>(null);
@@ -83,6 +93,7 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
   const [schedule, setSchedule] = useState<ScheduleStatus | null>(null);
   const [core, setCore] = useState<CoreStatus | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [error, setError] = useState("");
 
   const saveReady = useRef(false);
@@ -92,7 +103,7 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     let disposed = false;
 
     const load = async () => {
-      const [loadedConfig, state, initialLogs, scheduleStatus, coreStatus, info] =
+      const [loadedConfig, state, initialLogs, scheduleStatus, coreStatus, info, update] =
         await Promise.all([
           withTimeout(api.GetConfig() as unknown as Promise<AppConfig>, DEFAULT_CONFIG),
           withTimeout(api.GetRunState() as unknown as Promise<RunState>, DEFAULT_RUN_STATE as unknown as RunState),
@@ -100,6 +111,7 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
           withTimeout(api.GetScheduleStatus() as unknown as Promise<ScheduleStatus>, null as unknown as ScheduleStatus),
           withTimeout(api.GetCoreStatus() as unknown as Promise<CoreStatus>, null as unknown as CoreStatus),
           withTimeout(api.GetAppInfo() as unknown as Promise<AppInfo>, null as unknown as AppInfo),
+          withTimeout(api.GetUpdateStatus() as unknown as Promise<UpdateStatus>, null as unknown as UpdateStatus),
         ]);
       if (disposed) return;
 
@@ -119,6 +131,7 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
       setSchedule(scheduleStatus ?? null);
       setCore(coreStatus ?? null);
       setAppInfo(info ?? null);
+      setUpdateStatus(update ?? null);
       setReady(true);
     };
 
@@ -236,12 +249,17 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
       const status = event.data as unknown as ScheduleStatus;
       if (status) setSchedule(status);
     });
+    const offUpdate = Events.On("maago:update", (event) => {
+      const status = event.data as unknown as UpdateStatus;
+      if (status) setUpdateStatus(status);
+    });
 
     return () => {
       offLog();
       offRun();
       offTask();
       offSchedule();
+      offUpdate();
     };
   }, []);
 
@@ -365,6 +383,50 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     void api.OpenDiagnosticsDir().catch(() => undefined);
   }, []);
 
+  const checkCoreUpdate = useCallback(async () => {
+    await saveNow(config);
+    const info = await withTimeout(
+      api.CheckCoreUpdate() as unknown as Promise<ReleaseInfo>,
+      null as unknown as ReleaseInfo,
+      30000,
+    );
+    if (!info) {
+      setError("无法检查更新，请检查代理或网络");
+    } else {
+      setError("");
+    }
+    return info ?? null;
+  }, [config, saveNow]);
+
+  const startCoreUpdate = useCallback(
+    async (version: string) => {
+      await saveNow(config);
+      await guard(() => api.StartCoreUpdate(version), "启动核心更新失败");
+    },
+    [config, guard, saveNow],
+  );
+
+  const startResourceUpdate = useCallback(async () => {
+    await saveNow(config);
+    await guard(() => api.StartResourceUpdate(), "启动资源更新失败");
+  }, [config, guard, saveNow]);
+
+  const testProxy = useCallback(async (proxyURL: string) => {
+    return withTimeout(
+      api.TestProxy(proxyURL) as unknown as Promise<ProxyTestResult>,
+      { ok: false, status: 0, latencyMs: 0, message: "后端不可用" },
+      20000,
+    );
+  }, []);
+
+  const restartApp = useCallback(async () => {
+    await guard(() => api.RestartApp(), "重启失败，请手动退出后重新打开");
+  }, [guard]);
+
+  const openUpdatesDir = useCallback(() => {
+    void api.OpenUpdatesDir().catch(() => undefined);
+  }, []);
+
   const value: AppStoreValue = {
     config,
     updateConfig,
@@ -376,6 +438,7 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     schedule,
     core,
     appInfo,
+    updateStatus,
     error,
     clearError: () => setError(""),
     startQueue,
@@ -390,6 +453,12 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     openLogsDir,
     openCoreLogsDir,
     openDiagnosticsDir,
+    checkCoreUpdate,
+    startCoreUpdate,
+    startResourceUpdate,
+    testProxy,
+    restartApp,
+    openUpdatesDir,
   };
 
   return (

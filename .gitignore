@@ -13,6 +13,8 @@
 *.test
 *.out
 /.task/
+/.maago-updates/
+/core.backup/
 
 # MaaCore runtime binaries (see core/README.md)
 /core/*.dll

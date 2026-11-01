@@ -2,8 +2,13 @@
 package lifecycle
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -58,4 +63,22 @@ func Quit() {
 	if app := application.Get(); app != nil {
 		app.Quit()
 	}
+}
+
+// Restart launches a new instance after a short delay and quits this one. The
+// delay lets the single-instance lock be released before the new process starts.
+func Restart() error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	escaped := strings.ReplaceAll(executable, "'", "''")
+	script := fmt.Sprintf("Start-Sleep -Seconds 3; Start-Process -FilePath '%s'", escaped)
+	command := exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script)
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if err := command.Start(); err != nil {
+		return err
+	}
+	Quit()
+	return nil
 }

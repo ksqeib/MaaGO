@@ -4,6 +4,12 @@ MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArkn
 
 已通过 MaaCore 的 C API（`AsstCaller`）接入真实核心；MaaCore 与依赖 DLL、`resource/`、ADB 全部放在独立的 `core/` 目录，不会散落在程序根目录。
 
+## 文档
+
+- [使用说明（目录、首次运行、任务、日志、排障）](./docs/usage.zh-CN.md)
+- [core 运行目录清单](./docs/core-runtime.zh-CN.md)
+- [代理与下载说明](./docs/proxy.zh-CN.md)
+
 ## 功能
 
 - Wails v3 无边框窗口、自绘标题栏、窗口尺寸持久化
@@ -22,6 +28,7 @@ MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArkn
   - 通知：Windows 系统通知（完成/出错/定时前）
   - 外观：浅色 / 深色 / 跟随系统、简体中文 / English
   - 托盘：最小化到托盘、关闭到托盘
+  - 更新：应用内代理、检查更新、下载核心、更新资源、重启安装
 - 系统托盘：显示窗口、开始任务、停止任务、退出
 - 独立设计的界面与图标，不使用 MAA 官方 logo
 
@@ -43,6 +50,8 @@ core/
 │   └── AdbWinUsbApi.dll
 └── resource/
 ```
+
+详细说明见 [core-runtime.zh-CN.md](./docs/core-runtime.zh-CN.md)。
 
 从官方 MAA 发布包重新生成：
 
@@ -112,6 +121,8 @@ wails3 task dev
   - 每次真实运行前写入会话分隔符、版本、地址、ADB、任务顺序
   - 官方 Release 的 MaaCore 日志写入 `debug/asst.log`，不是 stdout；程序会同时保留 stdout 管道，并把 asst.log 的新增内容实时镜像到按日期滚动的核心日志
 - 诊断截图：`%APPDATA%\MaaGO\cache\diagnostics\`
+- 更新暂存：`<core 同级>\.maago-updates\`
+- 旧核心备份：`<core 同级>\core.backup\`
 
 ## 目录结构
 

@@ -207,6 +207,21 @@ func findCoreDir() (string, error) {
 	return candidates[0], fmt.Errorf("MaaCore.dll not found in %s", candidates[0])
 }
 
+// DefaultCoreDir returns the preferred core directory even when it does not
+// exist yet. Used by the updater before MaaCore is loaded.
+func DefaultCoreDir() string {
+	if dir, err := findCoreDir(); err == nil {
+		return dir
+	}
+	if exe, err := os.Executable(); err == nil {
+		return filepath.Clean(filepath.Join(filepath.Dir(exe), "..", "core"))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		return filepath.Join(cwd, "core")
+	}
+	return "core"
+}
+
 func (c *Core) load() {
 	dllPath, err := filepath.Abs(filepath.Join(c.dir, "MaaCore.dll"))
 	if err != nil {

@@ -144,7 +144,8 @@
       "schedule": "Schedule",
       "notification": "Notifications",
       "appearance": "Appearance",
-      "tray": "Tray"
+      "tray": "Tray",
+      "update": "Updates"
     },
     "connection": {
       "auto_detect": "Auto-detect connection",
@@ -218,6 +219,38 @@
       "minimize": "Hide to tray on minimize",
       "close": "Hide to tray on close",
       "note": "Restore from the tray icon. Use the tray menu's Quit item to exit."
+    },
+    "update": {
+      "proxy_title": "Proxy and downloads",
+      "proxy_hint": "Used for update checks and core/resource downloads; leave empty to use system/environment proxy.",
+      "proxy_enable": "Enable HTTP proxy",
+      "proxy_url": "Proxy URL",
+      "proxy_test": "Test proxy",
+      "proxy_testing": "Testing…",
+      "core_title": "Core update",
+      "current": "Current core version",
+      "target": "Target version",
+      "target_ph": "Empty = latest",
+      "target_hint": "For example 6.20.1. Empty checks the latest GitHub release.",
+      "mirror": "Download mirror prefix",
+      "check": "Check for updates",
+      "download": "Download and install core",
+      "resource": "Update resources",
+      "open_staging": "Open staging folder",
+      "latest": "Latest",
+      "note": "Updates are staged and installed on the next start. Automatic updates are not enabled.",
+      "restart": "Restart and install",
+      "resource_title": "Resource update",
+      "resource_hint": "Updates MaaResource hot files; a base resource/ must already exist.",
+      "resource_note": "Resource files are merged into core/resource and take effect after a restart. Use this when new events or recruitment data are added.",
+      "stage": {
+        "idle": "Idle",
+        "checking": "Checking for updates",
+        "downloading": "Downloading",
+        "extracting": "Extracting",
+        "ready": "Ready; restart to install",
+        "error": "Update failed"
+      }
     },
     "core": {
       "title": "Core status",

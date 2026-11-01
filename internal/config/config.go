@@ -10,13 +10,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 
 	"MaaGO/internal/apppath"
 )
 
 // ConfigVersion is bumped when the on-disk shape changes.
-const ConfigVersion = 3
+const ConfigVersion = 4
 
 var (
 	mu       sync.RWMutex
@@ -129,6 +130,18 @@ type NotificationConfig struct {
 	OnSchedule    bool `json:"onSchedule"`
 }
 
+// ProxyConfig controls outbound HTTP(S) traffic used by the updater.
+type ProxyConfig struct {
+	Enabled bool   `json:"enabled"`
+	URL     string `json:"url"`
+}
+
+// UpdateConfig controls core/resource update downloads.
+type UpdateConfig struct {
+	Mirror        string `json:"mirror"`
+	TargetVersion string `json:"targetVersion"`
+}
+
 // LastRun records the result of the most recent queue run.
 type LastRun struct {
 	StartedAt       string `json:"startedAt"`
@@ -155,6 +168,8 @@ type AppConfig struct {
 	Run             RunConfig          `json:"run"`
 	Schedule        ScheduleConfig     `json:"schedule"`
 	Notification    NotificationConfig `json:"notification"`
+	Proxy           ProxyConfig        `json:"proxy"`
+	Update          UpdateConfig       `json:"update"`
 	Tasks           []TaskConfig       `json:"tasks"`
 	LastRun         LastRun            `json:"lastRun"`
 }
@@ -198,6 +213,14 @@ func Default() AppConfig {
 			OnComplete:    true,
 			OnError:       true,
 			OnSchedule:    true,
+		},
+		Proxy: ProxyConfig{
+			Enabled: false,
+			URL:     "",
+		},
+		Update: UpdateConfig{
+			Mirror:        "",
+			TargetVersion: "",
 		},
 		Tasks: defaultTasks(),
 		LastRun: LastRun{
@@ -396,6 +419,9 @@ func (c *AppConfig) Normalize() {
 	if c.Schedule.NotifyMinutes < 0 {
 		c.Schedule.NotifyMinutes = 10
 	}
+	c.Proxy.URL = strings.TrimSpace(c.Proxy.URL)
+	c.Update.Mirror = strings.TrimSpace(c.Update.Mirror)
+	c.Update.TargetVersion = strings.TrimSpace(c.Update.TargetVersion)
 
 	seen := map[string]struct{}{}
 	tasks := make([]TaskConfig, 0, len(c.Tasks))

@@ -144,7 +144,8 @@
       "schedule": "定时",
       "notification": "通知",
       "appearance": "外观",
-      "tray": "托盘"
+      "tray": "托盘",
+      "update": "更新"
     },
     "connection": {
       "auto_detect": "自动检测连接",
@@ -218,6 +219,38 @@
       "minimize": "最小化时隐藏到托盘",
       "close": "关闭窗口时隐藏到托盘",
       "note": "隐藏后可通过托盘图标恢复窗口；退出请使用托盘菜单的“退出”。"
+    },
+    "update": {
+      "proxy_title": "代理与下载",
+      "proxy_hint": "用于检查更新和下载核心/资源；留空则使用系统/环境代理。",
+      "proxy_enable": "启用 HTTP 代理",
+      "proxy_url": "代理地址",
+      "proxy_test": "测试代理",
+      "proxy_testing": "正在测试…",
+      "core_title": "核心更新",
+      "current": "当前核心版本",
+      "target": "目标版本",
+      "target_ph": "留空使用最新",
+      "target_hint": "例如 6.20.1；留空时检查 GitHub 最新 Release。",
+      "mirror": "下载镜像前缀",
+      "check": "检查更新",
+      "download": "下载并安装核心",
+      "resource": "更新资源",
+      "open_staging": "打开暂存目录",
+      "latest": "最新版本",
+      "note": "更新会先下载到暂存目录，重启后替换；不会自动更新。",
+      "restart": "重启并安装",
+      "resource_title": "资源更新",
+      "resource_hint": "只更新 MaaResource 动态资源，需要已有基础 resource。",
+      "resource_note": "资源更新会合并到 core/resource，重启后生效；新活动/公招数据更新时使用。",
+      "stage": {
+        "idle": "空闲",
+        "checking": "正在检查更新",
+        "downloading": "正在下载",
+        "extracting": "正在解压",
+        "ready": "已准备就绪，重启后安装",
+        "error": "更新失败"
+      }
     },
     "core": {
       "title": "核心状态",

@@ -22,6 +22,7 @@ import (
 	"MaaGO/internal/runner"
 	"MaaGO/internal/scheduler"
 	"MaaGO/internal/tray"
+	"MaaGO/internal/updater"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -44,6 +45,7 @@ func init() {
 	application.RegisterEvent[runner.TaskState]("maago:task")
 	application.RegisterEvent[scheduler.Status]("maago:schedule")
 	application.RegisterEvent[config.AppConfig]("maago:config")
+	application.RegisterEvent[updater.Status]("maago:update")
 }
 
 // setupLogging mirrors logs to a file and, when requested, the console.
@@ -117,6 +119,13 @@ func main() {
 		defer capture.Stop()
 	}
 
+	coreDir := maa.DefaultCoreDir()
+	if message, err := updater.ApplyPending(coreDir); err != nil {
+		log.Printf("startup: apply pending update: %v", err)
+	} else if message != "" {
+		log.Printf("startup: %s", message)
+	}
+
 	core := maa.New()
 	if core.Available() {
 		userDir := filepath.Join(apppath.Root(), "core")
@@ -138,7 +147,8 @@ func main() {
 	taskScheduler := scheduler.New(taskRunner, emit, sendNotification)
 	taskScheduler.Update(cfg.Schedule)
 
-	service := app.NewService(taskRunner, taskScheduler, emit, core)
+	updates := updater.New(coreDir, emit)
+	service := app.NewService(taskRunner, taskScheduler, emit, core, updates)
 
 	wailsApp := application.New(application.Options{
 		Name:        "MaaGO",

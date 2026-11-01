@@ -19,6 +19,7 @@ import (
 	"MaaGO/internal/runner"
 	"MaaGO/internal/scheduler"
 	"MaaGO/internal/tray"
+	"MaaGO/internal/updater"
 	MaaVersion "MaaGO/internal/version"
 )
 
@@ -28,12 +29,13 @@ type Service struct {
 	runner    *runner.Runner
 	scheduler *scheduler.Scheduler
 	core      *maa.Core
+	updates   *updater.Service
 	emit      func(name string, payload any)
 }
 
 // NewService creates the application service.
-func NewService(r *runner.Runner, s *scheduler.Scheduler, emit func(name string, payload any), core *maa.Core) *Service {
-	return &Service{runner: r, scheduler: s, emit: emit, core: core}
+func NewService(r *runner.Runner, s *scheduler.Scheduler, emit func(name string, payload any), core *maa.Core, updates *updater.Service) *Service {
+	return &Service{runner: r, scheduler: s, emit: emit, core: core, updates: updates}
 }
 
 // AppInfo describes the running build.
@@ -147,6 +149,77 @@ func (s *Service) GetCoreStatus() CoreStatus {
 		Message:   message,
 		Demo:      true,
 	}
+}
+
+// CheckCoreUpdate asks GitHub for the latest MaaCore release.
+func (s *Service) CheckCoreUpdate() (updater.ReleaseInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	return s.updates.Check(ctx)
+}
+
+// StartCoreUpdate downloads and stages a MaaCore release. Progress is emitted
+// as maago:update; the staged files are installed on the next start.
+func (s *Service) StartCoreUpdate(version string) error {
+	if s.runner != nil && s.runner.Busy() {
+		return fmt.Errorf("stop the running task queue first")
+	}
+	if s.updates.Pending() {
+		return fmt.Errorf("an update is already staged; restart MaaGO first")
+	}
+	if s.updates.Busy() {
+		return fmt.Errorf("an update is already running")
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+		defer cancel()
+		_ = s.updates.DownloadCore(ctx, version)
+	}()
+	return nil
+}
+
+// StartResourceUpdate downloads and stages MaaResource hot-update files.
+func (s *Service) StartResourceUpdate() error {
+	if s.runner != nil && s.runner.Busy() {
+		return fmt.Errorf("stop the running task queue first")
+	}
+	if s.updates.Pending() {
+		return fmt.Errorf("an update is already staged; restart MaaGO first")
+	}
+	if s.updates.Busy() {
+		return fmt.Errorf("an update is already running")
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		_ = s.updates.DownloadResource(ctx)
+	}()
+	return nil
+}
+
+// GetUpdateStatus returns the current update progress.
+func (s *Service) GetUpdateStatus() updater.Status {
+	return s.updates.Status()
+}
+
+// TestProxy checks GitHub API reachability through the supplied proxy URL.
+func (s *Service) TestProxy(proxyURL string) updater.ProxyTestResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return updater.TestProxy(ctx, proxyURL)
+}
+
+// RestartApp relaunches MaaGO so a staged update can be applied.
+func (s *Service) RestartApp() error {
+	return lifecycle.Restart()
+}
+
+// OpenUpdatesDir opens the staging directory.
+func (s *Service) OpenUpdatesDir() error {
+	if s.updates == nil {
+		return fmt.Errorf("updater is unavailable")
+	}
+	return openPath(s.updates.Dir())
 }
 
 // DiagnoseConnection runs the staged ADB / MaaCore / screenshot / touch checks.
