@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,17 @@ type coreDetails struct {
 	What          string          `json:"what"`
 	Details       json.RawMessage `json:"details"`
 	FinishedTasks []int32         `json:"finished_tasks"`
+	Subtask       string          `json:"subtask"`
+	PreTask       string          `json:"pre_task"`
+	First         []string        `json:"first"`
+}
+
+// failureTrace keeps the last recognition attempts of a task chain so a failed
+// chain can explain which subtasks MaaCore could not match.
+type failureTrace struct {
+	first   []string
+	preTask string
+	seen    string
 }
 
 // runCore drives the real MaaCore queue. Completion is reported through the
@@ -180,6 +192,7 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 	stopRequested := false
 	var stopTimer <-chan time.Time
 	finished := map[string]bool{}
+	traces := map[string]*failureTrace{}
 
 	handleMessage := func(message maa.Message) (done bool) {
 		var details coreDetails
@@ -228,6 +241,16 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 				r.updateCoreProgress(completed+failedTasks, total)
 			}
 			r.SystemLog("error", fmt.Sprintf("任务出错：%s %s", fallback(taskName, details.TaskChain), summarize(details.Details)))
+			if trace := traces[details.TaskChain]; trace != nil && len(trace.first) > 0 {
+				hint := strings.Join(trace.first, " / ")
+				if trace.preTask != "" {
+					hint += fmt.Sprintf("（来自 %s）", trace.preTask)
+				}
+				r.SystemLog("warn", fmt.Sprintf("最后识别失败：%s", hint))
+			}
+			if shot := r.latestDebugScreenshot(); shot != "" {
+				r.SystemLog("info", fmt.Sprintf("失败截图：%s", shot))
+			}
 
 		case maa.MsgTaskChainStopped:
 			if hasTask {
@@ -242,7 +265,26 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 		case maa.MsgTaskChainExtraInfo:
 			r.SystemLogCoreExtra("info", details)
 		case maa.MsgSubTaskError:
-			r.SystemLog("error", fmt.Sprintf("子任务错误：%s", summarizeLine(details)))
+			trace := traces[details.TaskChain]
+			if trace == nil {
+				trace = &failureTrace{}
+				traces[details.TaskChain] = trace
+			}
+			key := strings.Join(details.First, ",") + "|" + details.PreTask
+			trace.first = details.First
+			trace.preTask = details.PreTask
+			if key == trace.seen {
+				break
+			}
+			trace.seen = key
+			if len(details.First) == 0 && details.PreTask == "" {
+				break
+			}
+			text := "子任务未识别：" + strings.Join(details.First, " / ")
+			if details.PreTask != "" {
+				text += fmt.Sprintf("（来自 %s）", details.PreTask)
+			}
+			r.SystemLog("warn", text)
 		case maa.MsgSubTaskExtraInfo:
 			r.SystemLogCoreExtra("info", details)
 
@@ -447,17 +489,38 @@ func summarize(raw json.RawMessage) string {
 	return text
 }
 
-func summarizeLine(details coreDetails) string {
-	text := strings.TrimSpace(details.What)
-	extra := summarize(details.Details)
-	switch {
-	case text != "" && extra != "":
-		return text + " · " + extra
-	case text == "":
-		return extra
-	default:
-		return text
+// latestDebugScreenshot returns the newest MaaCore interface capture written
+// during this run. MaaCore saves one whenever recognition gives up, which makes
+// it the fastest way to see what the device was showing.
+func (r *Runner) latestDebugScreenshot() string {
+	if r.core == nil {
+		return ""
 	}
+	dir := filepath.Join(r.core.UserDir(), "debug", "interface")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	started, _ := time.Parse(time.RFC3339, r.State().StartedAt)
+	var newest string
+	var newestTime time.Time
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".png") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if !started.IsZero() && info.ModTime().Before(started.Add(-2*time.Second)) {
+			continue
+		}
+		if info.ModTime().After(newestTime) {
+			newest = filepath.Join(dir, entry.Name())
+			newestTime = info.ModTime()
+		}
+	}
+	return newest
 }
 
 func fallback(primary, secondary string) string {

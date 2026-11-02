@@ -17,7 +17,7 @@ import (
 )
 
 // ConfigVersion is bumped when the on-disk shape changes.
-const ConfigVersion = 4
+const ConfigVersion = 5
 
 var (
 	mu       sync.RWMutex
@@ -237,11 +237,15 @@ func defaultTasks() []TaskConfig {
 			"accountSwitch": "",
 		}},
 		{ID: "task-fight", Type: TaskFight, Enabled: true, Options: map[string]any{
-			"stage":    "",
-			"times":    0,
-			"medicine": true,
-			"stone":    false,
-			"series":   "1",
+			"stage":              "",
+			"times":              0,
+			"medicine":           false,
+			"medicineCount":      1,
+			"expiringMedicine":   true,
+			"medicineExpireDays": 1,
+			"stone":              false,
+			"stoneCount":         1,
+			"series":             "1",
 		}},
 		{ID: "task-infrast", Type: TaskInfrast, Enabled: true, Options: map[string]any{
 			"mode":          "default",
@@ -475,6 +479,30 @@ func (c *AppConfig) migrate() {
 	}
 	if c.Run.PostAction == "" {
 		c.Run = defaults.Run
+	}
+	if c.ConfigVersion < 5 {
+		for i := range c.Tasks {
+			task := &c.Tasks[i]
+			if task.Type != TaskFight {
+				continue
+			}
+			if task.Options == nil {
+				task.Options = map[string]any{}
+			}
+			fill := func(key string, value any) {
+				if _, ok := task.Options[key]; !ok {
+					task.Options[key] = value
+				}
+			}
+			fill("medicineCount", 1)
+			fill("expiringMedicine", true)
+			fill("medicineExpireDays", 1)
+			fill("stoneCount", 1)
+			// Up to v4 "medicine" meant "use a normal sanity potion". MaaCore
+			// consumes normal potions before applying the expiring-medicine
+			// window, so keep normal potions opt-in and default to expiring ones.
+			task.Options["medicine"] = false
+		}
 	}
 	c.MinimizeToTray = defaults.MinimizeToTray
 	c.CloseToTray = defaults.CloseToTray

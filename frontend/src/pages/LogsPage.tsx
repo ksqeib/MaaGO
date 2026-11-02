@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { FaFolderOpen } from "react-icons/fa";
+import { FaFolderOpen, FaImage } from "react-icons/fa";
 
 import { LogConsole } from "@/components/LogConsole";
 import { PageHeader } from "@/components/PageHeader";
@@ -7,7 +7,7 @@ import { useAppStore } from "@/store/AppStore";
 
 export const LogsPage = () => {
   const { t } = useTranslation();
-  const { logs, clearLogs, openLogsDir, openCoreLogsDir } = useAppStore();
+  const { logs, clearLogs, openLogsDir, openCoreLogsDir, openFailureShotsDir } = useAppStore();
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden px-4 pb-4 pt-[var(--content-pt)]">
@@ -22,6 +22,14 @@ export const LogsPage = () => {
             >
               <FaFolderOpen size={11} />
               {t("logs.core_dir")}
+            </button>
+            <button
+              className="flex items-center gap-2 rounded-full bg-surface-secondary px-3.5 py-2 text-xs font-medium text-muted transition-colors hover:text-foreground"
+              onClick={openFailureShotsDir}
+              type="button"
+            >
+              <FaImage size={11} />
+              {t("logs.shots_dir")}
             </button>
             <button
               className="flex items-center gap-2 rounded-full bg-surface-secondary px-3.5 py-2 text-xs font-medium text-muted transition-colors hover:text-foreground"

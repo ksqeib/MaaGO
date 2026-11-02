@@ -74,12 +74,39 @@ func BuildTaskParams(task config.TaskConfig, cfg config.AppConfig) (string, erro
 		if times <= 0 {
 			times = math.MaxInt32
 		}
+		// MaaCore consumes normal potions before it applies the expiring window,
+		// so keep the two budgets explicit just like the official client.
+		medicine := 0
+		if optBool(options, "medicine", false) {
+			medicine = optInt(options, "medicineCount", 1)
+			if medicine < 1 {
+				medicine = 1
+			}
+		}
+		expireDays := 0
+		if optBool(options, "expiringMedicine", false) {
+			expireDays = optInt(options, "medicineExpireDays", 1)
+			if expireDays < 1 {
+				expireDays = 1
+			}
+			if expireDays > 7 {
+				expireDays = 7
+			}
+		}
+		stone := 0
+		if optBool(options, "stone", false) {
+			stone = optInt(options, "stoneCount", 1)
+			if stone < 1 {
+				stone = 1
+			}
+		}
 		params = map[string]any{
-			"enable":   true,
-			"medicine": boolToCount(optBool(options, "medicine", true)),
-			"stone":    boolToCount(optBool(options, "stone", false)),
-			"times":    times,
-			"series":   optInt(options, "series", 1),
+			"enable":               true,
+			"medicine":             medicine,
+			"medicine_expire_days": expireDays,
+			"stone":                stone,
+			"times":                times,
+			"series":               optInt(options, "series", 1),
 		}
 		if stage := strings.TrimSpace(optString(options, "stage", "")); stage != "" {
 			params["stage"] = stage
@@ -232,13 +259,6 @@ func serverForClient(clientType string) string {
 	default:
 		return ""
 	}
-}
-
-func boolToCount(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
 }
 
 func splitList(value string) []string {

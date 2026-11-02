@@ -133,6 +133,7 @@
     "clear": "Clear",
     "open_dir": "Open log folder",
     "core_dir": "Core logs",
+    "shots_dir": "Failure shots",
     "count": "{{count}} entries"
   },
   "settings": {

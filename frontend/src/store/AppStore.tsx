@@ -54,6 +54,7 @@ interface AppStoreValue {
   openDataDir: () => void;
   openLogsDir: () => void;
   openCoreLogsDir: () => void;
+  openFailureShotsDir: () => void;
   openDiagnosticsDir: () => void;
   checkCoreUpdate: () => Promise<ReleaseInfo | null>;
   startCoreUpdate: (version: string) => Promise<void>;
@@ -379,6 +380,10 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     void api.OpenCoreLogsDir().catch(() => undefined);
   }, []);
 
+  const openFailureShotsDir = useCallback(() => {
+    void api.OpenFailureShotsDir().catch(() => undefined);
+  }, []);
+
   const openDiagnosticsDir = useCallback(() => {
     void api.OpenDiagnosticsDir().catch(() => undefined);
   }, []);
@@ -452,6 +457,7 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     openDataDir,
     openLogsDir,
     openCoreLogsDir,
+    openFailureShotsDir,
     openDiagnosticsDir,
     checkCoreUpdate,
     startCoreUpdate,

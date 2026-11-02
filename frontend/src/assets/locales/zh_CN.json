@@ -133,6 +133,7 @@
     "clear": "清空",
     "open_dir": "打开日志目录",
     "core_dir": "核心日志",
+    "shots_dir": "失败截图",
     "count": "{{count}} 条"
   },
   "settings": {

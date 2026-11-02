@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -260,6 +261,23 @@ func (s *Service) OpenCoreLogsDir() error {
 // OpenDiagnosticsDir opens the diagnostic screenshot directory.
 func (s *Service) OpenDiagnosticsDir() error {
 	return openPath(apppath.DiagnosticsDir())
+}
+
+// OpenFailureShotsDir opens MaaCore's own interface screenshot directory. It
+// holds the images MaaCore saved when recognition gave up.
+func (s *Service) OpenFailureShotsDir() error {
+	userDir := ""
+	if s.core != nil {
+		userDir = s.core.UserDir()
+	}
+	if userDir == "" {
+		userDir = filepath.Join(apppath.Root(), "core")
+	}
+	dir := filepath.Join(userDir, "debug", "interface")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return openPath(dir)
 }
 
 // DetectConnection scans common emulator ports.

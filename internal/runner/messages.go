@@ -68,8 +68,14 @@ func fightScript(options map[string]any) []step {
 		{400 * time.Millisecond, "info", "识别当前理智…"},
 		{400 * time.Millisecond, "info", "理智：135 / 135"},
 	}
-	if optBool(options, "medicine", true) {
-		steps = append(steps, step{300 * time.Millisecond, "info", "理智不足时使用理智药"})
+	if optBool(options, "expiringMedicine", false) {
+		days := optInt(options, "medicineExpireDays", 1)
+		steps = append(steps, step{300 * time.Millisecond, "info", fmt.Sprintf("只使用 %d 天内过期的理智药", days)})
+	}
+	if optBool(options, "medicine", false) {
+		steps = append(steps, step{300 * time.Millisecond, "info", "理智不足时使用普通理智药"})
+	} else {
+		steps = append(steps, step{300 * time.Millisecond, "info", "不会使用普通理智药"})
 	}
 	if optBool(options, "stone", false) {
 		steps = append(steps, step{300 * time.Millisecond, "warn", "已启用源石补充理智"})
