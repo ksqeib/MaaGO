@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"unsafe"
 
+	"MaaGO/internal/apppath"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -80,14 +82,17 @@ func coreCallback(msg uintptr, details uintptr, _ uintptr) uintptr {
 	return 0
 }
 
+const versionMarkerFile = ".maago-core-version"
+
 // Core owns the MaaCore DLL handle and resolved functions.
 type Core struct {
-	dir     string
-	userDir string
-	dll     windows.Handle
-	procs   map[string]uintptr
-	version string
-	loadErr error
+	dir          string
+	resourceRoot string
+	userDir      string
+	dll          windows.Handle
+	procs        map[string]uintptr
+	version      string
+	loadErr      error
 
 	resourceOnce sync.Once
 	resourceErr  error
@@ -99,7 +104,7 @@ type Handle uintptr
 // New loads MaaCore from a core directory. It never panics; check Available.
 func New() *Core {
 	dir, err := findCoreDir()
-	core := &Core{dir: dir, procs: map[string]uintptr{}}
+	core := &Core{dir: dir, resourceRoot: filepath.Dir(filepath.Clean(dir)), procs: map[string]uintptr{}}
 	if err != nil {
 		core.loadErr = err
 		return core
@@ -110,7 +115,7 @@ func New() *Core {
 
 // NewAt loads MaaCore from an explicit directory.
 func NewAt(dir string) *Core {
-	core := &Core{dir: dir, procs: map[string]uintptr{}}
+	core := &Core{dir: dir, resourceRoot: filepath.Dir(filepath.Clean(dir)), procs: map[string]uintptr{}}
 	core.load()
 	return core
 }
@@ -121,6 +126,14 @@ func (c *Core) Dir() string {
 		return ""
 	}
 	return c.dir
+}
+
+// ResourceDir returns the resource directory next to the core directory.
+func (c *Core) ResourceDir() string {
+	if c == nil {
+		return ""
+	}
+	return filepath.Join(c.resourceRoot, "resource")
 }
 
 // SetUserDir sets MaaCore's user directory, which holds its debug log and
@@ -271,21 +284,35 @@ func (c *Core) load() {
 			c.version = windows.BytePtrToString((*byte)(unsafe.Pointer(result)))
 		}
 	}
+	if c.version == "" || c.version == "DEBUG_VERSION" {
+		if data, err := os.ReadFile(filepath.Join(c.dir, versionMarkerFile)); err == nil {
+			if marker := strings.TrimSpace(string(data)); marker != "" {
+				c.version = marker
+			}
+		}
+	}
 }
 
-// LoadResource loads core/resource once. AsstLoadResource appends "/resource".
+// LoadResource loads the sibling resource directory once. AsstLoadResource
+// appends "/resource", so pass the parent of the resource directory.
 func (c *Core) LoadResource() error {
 	if !c.Available() {
 		return c.Err()
 	}
 	c.resourceOnce.Do(func() {
-		ok, err := c.callBool("AsstLoadResource", c.dir)
+		if c.userDir == "" {
+			if err := c.SetUserDir(filepath.Join(apppath.Root(), "core")); err != nil {
+				c.resourceErr = fmt.Errorf("set default user dir: %w", err)
+				return
+			}
+		}
+		ok, err := c.callBool("AsstLoadResource", c.resourceRoot)
 		if err != nil {
 			c.resourceErr = err
 			return
 		}
 		if !ok {
-			c.resourceErr = fmt.Errorf("MaaCore rejected resource directory %s", filepath.Join(c.dir, "resource"))
+			c.resourceErr = fmt.Errorf("MaaCore rejected resource directory %s", c.ResourceDir())
 		}
 	})
 	return c.resourceErr

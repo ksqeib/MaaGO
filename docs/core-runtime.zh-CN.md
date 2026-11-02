@@ -1,33 +1,33 @@
 # MaaCore 运行目录说明
 
-本文说明 `core/` 目录中每个文件的作用，以及从官方 MAA 发布包中应该复制什么、不要复制什么。
+本文说明 `core/` 和 `resource/` 的职责，以及从 `ksqeib/MaaCore` SDK 和 MAA 资源中应该复制什么、不要复制什么。
 
 ## 1. 目录总览
 
 ```text
-core/
+core/                          # 只放 MaaCore SDK 二进制
 ├── MaaCore.dll
 ├── MaaUtils.dll
-├── MaaAdbControlUnit.dll
-├── MaaWin32ControlUnit.dll
 ├── DirectML.dll
 ├── fastdeploy_ppocr_maa.dll
 ├── onnxruntime_maa.dll
 ├── opencv_world4_maa.dll
-├── adb/
-│   ├── adb.exe
-│   ├── AdbWinApi.dll
-│   └── AdbWinUsbApi.dll
-└── resource/
-    ├── version.json
-    ├── tasks/
-    ├── template/
-    ├── onnx/
-    ├── global/
-    └── ...
+├── .maago-core-version
+└── adb/
+    ├── adb.exe
+    ├── AdbWinApi.dll
+    └── AdbWinUsbApi.dll
+
+resource/                      # MAA 资源，与 core 分开
+├── version.json
+├── tasks/
+├── template/
+├── onnx/
+├── global/
+└── ...
 ```
 
-所有文件都是 x64。MaaGO 通过 `LoadLibraryEx(..., LOAD_WITH_ALTERED_SEARCH_PATH)` 加载 `MaaCore.dll`，依赖 DLL 会优先从 `core/` 解析，所以不需要把它们放到 exe 根目录。
+所有文件都是 x64。MaaGO 通过 `LoadLibraryEx(..., LOAD_WITH_ALTERED_SEARCH_PATH)` 加载 `core/MaaCore.dll`，依赖 DLL 会优先从 `core/` 解析；资源则通过 `AsstLoadResource` 加载程序目录下的 `resource/`。
 
 ## 2. 必需文件
 
@@ -38,14 +38,6 @@ core/
 ### `MaaUtils.dll`
 
 MaaCore 的公共工具库，包含日志、路径、平台等基础能力。缺少时 `MaaCore.dll` 加载会失败。
-
-### `MaaAdbControlUnit.dll`
-
-ADB 控制器。MaaGO 当前主要使用 ADB 连接，必须存在。
-
-### `MaaWin32ControlUnit.dll`
-
-Win32 窗口控制器。当前 UI 还没有启用 Win32 连接，但它属于官方核心依赖，建议保留。
 
 ### `DirectML.dll`
 
@@ -63,9 +55,15 @@ PP-OCR 推理组件。
 
 OpenCV 的 MAA 定制版，用于图像处理、模板匹配。
 
-### `resource/`
+### `resource/`（与 core 同级）
 
-MAA 的任务定义、模板图、OCR 模型、关卡数据、活动数据、多服务器覆盖资源等。没有它，MaaCore 会初始化失败或任务无法识别。
+MAA 的任务定义、模板图、OCR 模型、关卡数据、活动数据、多服务器覆盖资源等。没有它，MaaCore 会初始化失败或任务无法识别。它不在 `core/` 里面：
+
+```text
+MaaGO/
+├── core/        # MaaCore SDK
+└── resource/    # MAA 资源
+```
 
 关键子目录：
 
@@ -123,30 +121,25 @@ MaaGO 会把 `asst.log` 的新增内容镜像到：
 
 ## 5. 不要复制的内容
 
-从 MAA 发布包中**只需要**核心 DLL + `resource/` + 可选 ADB。以下内容不要放进 `core/`：
+从 `ksqeib/MaaCore` SDK 包中只需要 `bin/*.dll`。以下内容不要放进 `core/`：
 
 | 文件/目录 | 原因 |
 |---|---|
-| `MAA.exe`、`MAA.dll` | WPF 前端，MaaGO 不使用 |
-| `MAA.deps.json`、`MAA.runtimeconfig.json` | .NET 前端配置 |
-| `hostfxr.dll`、`hostpolicy.dll` | .NET 运行时 |
-| `PresentationFramework*.dll` 等 WPF DLL | .NET UI |
-| `HandyControl.dll`、`Stylet.dll` 等 | MAA WPF 依赖 |
-| `Res/` | MAA WPF 的图片/视频资源 |
-| `Python/` | MAA 附带的 Python 环境 |
-| `config/` | MAA 的用户配置 |
-| `data/`、`externals/` | MAA 更新器/第三方数据 |
+| `include/` | 集成头文件，运行不需要 |
+| `MaaCore.pdb`、`MaaUtils.pdb` | 调试符号 |
+| `README.md`、`LICENSE.md` | 文档 |
+| `MAA.exe`、`MAA.dll` | 官方 WPF 前端，MaaGO 不使用 |
+| `resource/` | 应放到程序目录的 `resource/`，不要放进 `core/` |
 | 旧 `debug/`、`cache/` | 旧日志和缓存 |
-
-这些文件不会帮助 MaaGO 运行，反而会让目录混乱。
 
 ## 6. 版本匹配
 
-- `MaaCore.dll`、同目录 DLL 和 `resource/` 最好来自同一个 MAA Release。
+- `MaaCore.dll` 和同目录 DLL 必须来自同一个 SDK Release，整体替换。
+- 资源是独立分发的；更新 core 不会修改 `resource/`。
 - 只更新 `MaaResource` 动态资源时，基础 `resource/` 必须已经存在。
-- 如果连接诊断提示资源加载失败，优先用完整的 `update-core.ps1` 覆盖，而不是只换一个 DLL。
-- MaaCore 版本可在“设置 → 连接 → 核心状态”或 `logs/startup.log` 查看。
-- 游戏客户端比 MaaCore 新时，主界面模板可能对不上；应更新到包含该界面适配的完整 MaaCore 版本（2026-11 国服界面需要 v6.21.1 或更高），不要手工拷贝旧模板。
+- 如果连接诊断提示资源加载失败，用“更新资源”补装基础资源，或检查 `resource/version.json`。
+- MaaCore 版本可在“设置 → 连接 → 核心状态”或 `logs/startup.log` 查看；SDK 的 `DEBUG_VERSION` 会由 `core/.maago-core-version` 中的发布标签替代显示。
+- 游戏客户端比 MaaCore 新时，主界面模板可能对不上；应更新基础 `resource/` 到包含该界面适配的版本（2026-11 国服界面需要带 `Task-90` 的新资源），不要手工拷贝旧模板。
 
 ## 7. 安装/更新命令
 
@@ -155,13 +148,13 @@ MaaGO 会把 `asst.log` 的新增内容镜像到：
 命令行：
 
 ```powershell
-# 从本地发布包复制
-.\scripts\install-core.ps1 -Source "D:\tool\MAA-v6.20.1-win-x64" -AdbSource "D:\tool\platform-tools"
+# 从本地 SDK 包复制 bin/ 下的 DLL
+.\scripts\install-core.ps1 -Source "D:\tool\MaaCore-sdk" -AdbSource "D:\tool\platform-tools" -Version "v0.1.1"
 
-# 从 GitHub 下载指定版本
-.\scripts\update-core.ps1 -Version 6.20.1
+# 从 GitHub 下载指定 SDK 版本
+.\scripts\update-core.ps1 -Version 0.1.1
 
-# 只更新动态资源
+# 更新动态资源（或首次安装基础资源）
 .\scripts\update-resource.ps1
 ```
 
@@ -173,7 +166,7 @@ MaaGO 会把 `asst.log` 的新增内容镜像到：
 
 ```powershell
 Test-Path .\core\MaaCore.dll
-Test-Path .\core\resource\version.json
+Test-Path .\resource\version.json
 Test-Path .\core\adb\adb.exe
 .\core\adb\adb.exe devices
 ```

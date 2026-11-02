@@ -43,6 +43,24 @@ func readPending(updatesDir string) (pendingUpdate, bool, error) {
 	return pending, true, nil
 }
 
+// MigrateLayout moves <core>/resource to the sibling resource directory used
+// by the separated layout. It is a no-op when the new directory already exists.
+func MigrateLayout(coreDir string) (string, error) {
+	root := filepath.Dir(filepath.Clean(coreDir))
+	oldResource := filepath.Join(coreDir, "resource")
+	newResource := filepath.Join(root, "resource")
+	if _, err := os.Stat(newResource); err == nil {
+		return "", nil
+	}
+	if _, err := os.Stat(oldResource); err != nil {
+		return "", nil
+	}
+	if err := os.Rename(oldResource, newResource); err != nil {
+		return "", fmt.Errorf("move resource directory to %s: %w", newResource, err)
+	}
+	return "resource directory moved to " + newResource, nil
+}
+
 // ApplyPending installs a staged core or resource update. It must run before
 // MaaCore is loaded, otherwise MaaCore.dll is locked.
 func ApplyPending(coreDir string) (string, error) {
@@ -75,6 +93,9 @@ func ApplyPending(coreDir string) (string, error) {
 			}
 			return "", fmt.Errorf("install staged core: %w", err)
 		}
+		if pending.Version != "" {
+			_ = os.WriteFile(filepath.Join(coreDir, ".maago-core-version"), []byte(pending.Version), 0o644)
+		}
 		_ = os.RemoveAll(filepath.Dir(pending.Staging))
 		_ = os.Remove(pendingPath(updatesDir))
 		return "core " + pending.Version + " installed", nil
@@ -83,16 +104,16 @@ func ApplyPending(coreDir string) (string, error) {
 		if _, err := os.Stat(filepath.Join(pending.Staging, "version.json")); err != nil {
 			return "", fmt.Errorf("staged resource is invalid: %w", err)
 		}
-		target := filepath.Join(coreDir, "resource")
-		if _, err := os.Stat(coreDir); err != nil {
-			return "", fmt.Errorf("core directory is missing: %w", err)
+		target := filepath.Join(filepath.Dir(coreDir), "resource")
+		if err := os.MkdirAll(target, 0o755); err != nil {
+			return "", fmt.Errorf("create resource directory: %w", err)
 		}
 		if err := copyPath(pending.Staging, target); err != nil {
 			return "", fmt.Errorf("apply staged resource: %w", err)
 		}
 		_ = os.RemoveAll(filepath.Dir(pending.Staging))
 		_ = os.Remove(pendingPath(updatesDir))
-		return "MaaResource hot update installed", nil
+		return "resource installed", nil
 
 	default:
 		return "", fmt.Errorf("unknown pending update kind: %s", pending.Kind)

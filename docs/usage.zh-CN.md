@@ -11,11 +11,11 @@
 | 系统 | Windows 10/11 x64 |
 | WebView2 Runtime | Windows 11 通常自带；Windows 10 需要安装 Microsoft Edge WebView2 Runtime |
 | Visual C++ 运行库 | Microsoft Visual C++ 2015-2022 Redistributable (x64)，MaaCore 和 ONNX/OpenCV 依赖 |
-| MaaCore | `core/MaaCore.dll` 及同目录依赖 DLL |
-| MAA 资源 | `core/resource/`，必须与核心配套使用 |
+| MaaCore | `core/MaaCore.dll` 及同目录依赖 DLL（ksqeib/MaaCore SDK） |
+| MAA 资源 | `resource/`，与 core 目录分开存放 |
 | ADB | `core/adb/adb.exe`，或设置中指定其他 `adb.exe` |
 | 模拟器/客户端 | MuMu、雷电、蓝叠、夜神、逍遥、WSA 等，或 MAA 支持的 PC 客户端 |
-| 磁盘空间 | `core/` 约 300–400 MB（主要是 `resource/`）；日志和截图额外占用 |
+| 磁盘空间 | `core/` 约 100 MB，`resource/` 约 300–400 MB；日志和截图额外占用 |
 
 ### 推荐
 
@@ -28,31 +28,31 @@
 ```text
 MaaGO/
 ├── MaaGO.exe
-├── core/
+├── core/                       # MaaCore SDK（只放二进制）
 │   ├── MaaCore.dll
 │   ├── MaaUtils.dll
-│   ├── MaaAdbControlUnit.dll
-│   ├── MaaWin32ControlUnit.dll
 │   ├── DirectML.dll
 │   ├── fastdeploy_ppocr_maa.dll
 │   ├── onnxruntime_maa.dll
 │   ├── opencv_world4_maa.dll
-│   ├── adb/
-│   │   ├── adb.exe
-│   │   ├── AdbWinApi.dll
-│   │   └── AdbWinUsbApi.dll
-│   └── resource/
-│       ├── version.json
-│       ├── tasks/
-│       ├── template/
-│       ├── onnx/
-│       ├── global/
-│       │   ├── YoStarEN/
-│       │   ├── YoStarJP/
-│       │   ├── YoStarKR/
-│       │   └── txwy/
-│       └── ...
-└── ...
+│   ├── .maago-core-version     # 安装的 SDK 版本标记
+│   └── adb/
+│       ├── adb.exe
+│       ├── AdbWinApi.dll
+│       └── AdbWinUsbApi.dll
+├── resource/                   # MAA 资源（与 core 分开）
+│   ├── version.json
+│   ├── tasks/
+│   ├── template/
+│   ├── onnx/
+│   ├── global/
+│   │   ├── YoStarEN/
+│   │   ├── YoStarJP/
+│   │   ├── YoStarKR/
+│   │   └── txwy/
+│   └── ...
+├── .maago-updates\             # 更新暂存（下载/解压后等待重启）
+└── core.backup\                # 上一版 core 备份
 ```
 
 用户数据不在程序目录：
@@ -71,121 +71,132 @@ MaaGO/
 └── cache\
     └── diagnostics\
         └── diagnostic-YYYYMMDD-HHMMSS.png
-
-core 同级目录还会出现：
-├── .maago-updates\        # 更新暂存（下载/解压后等待重启）
-└── core.backup\           # 上一版核心备份
 ```
 
-`core/` 只放运行需要的二进制和资源，不放用户日志，不放 `MAA.exe`/WPF 文件。
+`core/` 只放 MaaCore SDK 二进制和 ADB；`resource/` 单独放资源。升级 core 不会动资源目录，更新资源也不会动 core。
+
+> 旧版本的 `core/resource/` 会在启动时自动迁移到程序目录下的 `resource/`。
 
 ## 3. core 目录清单
 
 详细的依赖说明见 [core-runtime.zh-CN.md](./core-runtime.zh-CN.md)。这里先给结论：
 
-### 必须有
+### core 必须有
+
+以 `ksqeib/MaaCore` SDK 发布包 `bin/` 为准，目前是：
 
 - `MaaCore.dll`
 - `MaaUtils.dll`
-- `MaaAdbControlUnit.dll`
-- `MaaWin32ControlUnit.dll`
 - `DirectML.dll`
 - `fastdeploy_ppocr_maa.dll`
 - `onnxruntime_maa.dll`
 - `opencv_world4_maa.dll`
-- `resource/`
+
+不同 SDK 版本可能增减依赖 DLL，**整个 `bin/` 一起替换**即可，不要混用版本。资源不放在 `core/`。
+
+### resource 必须有
+
+- `resource/version.json`
+- `resource/tasks/`
+- `resource/template/`
+- OCR/ONNX 模型和 `global/` 等其余内容
+
+首次安装如果没有 `resource/`，MaaGO 会在“更新资源”时下载官方 MAA 完整发布包并只提取 `resource/`。
 
 ### 强烈建议有
 
-- `adb/adb.exe`
-- `adb/AdbWinApi.dll`
-- `adb/AdbWinUsbApi.dll`
+- `core/adb/adb.exe`
+- `core/adb/AdbWinApi.dll`
+- `core/adb/AdbWinUsbApi.dll`
 
 ### 会自动生成，不需要手动放
 
 - `%APPDATA%\MaaGO\core\debug\asst.log`
 - `%APPDATA%\MaaGO\core\cache\`
+- `core/.maago-core-version`
 
 ### 不要复制
 
-从 MAA 发布包里只需要“核心运行时 + resource”。以下文件不属于 MaaGO：
+SDK 包里只需要 `bin/*.dll`。以下文件不属于 MaaGO：
 
-- `MAA.exe`、`MAA.dll`
-- `MAA.deps.json`、`MAA.runtimeconfig.json`
-- `hostfxr.dll`、`hostpolicy.dll`
-- WPF/HandyControl 等 .NET UI DLL
-- `Res/`、`Python/`、`config/`、`data/`、`externals/`
-- 旧版 `debug/`、`cache/`
+- `include/` 头文件
+- `MaaCore.pdb`、`MaaUtils.pdb`
+- `README.md`、`LICENSE.md`
+- `MAA.exe`、`MAA.dll` 等官方启动器文件
+- `resource/`（放到程序目录的 `resource/`，不要塞进 `core/`）
 
 ## 4. 安装或更新 core
+
+MaaGO 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 SDK 发布包，只包含 `bin/` 下的 DLL 和依赖，不包含资源。
 
 ### 方式 A：应用内更新（推荐）
 
 “设置 → 更新”：
 
 1. 需要代理时先启用 HTTP 代理并填写地址，点“测试代理”。
-2. “核心更新”可留空目标版本使用最新 Release，或填写 `6.20.1`。
+2. “核心更新”可留空目标版本使用最新 Release，或填写 `0.1.1`。
 3. 点“检查更新”确认最新版本。
 4. 点“下载并安装核心”，等待进度完成。
-5. 点“重启并安装”；程序重启时会在加载 MaaCore 前替换核心。
+5. 点“重启并安装”；程序重启时会在加载 MaaCore 前替换 `core/` 下的 DLL。
 
 资源更新也在同一页：点“更新资源”后重启生效。
 
 更新过程会：
 
-- 下载到 `core/` 同级的 `.maago-updates/` 暂存目录
-- 校验 `MaaCore.dll` 和 `resource/version.json`
+- 下载 SDK 包到 `.maago-updates/` 暂存目录
+- 校验 `MaaCore.dll` 和 `MaaUtils.dll`
 - 重启时把旧 `core/` 改名为 `core.backup/`
-- 把新核心移动到 `core/`
-- 保留旧核心用于手动回滚
+- 把新 DLL 移到 `core/`，写入 `.maago-core-version`
+- 资源目录 `resource/` 完全不受影响
 
-### 方式 B：从本地 MAA 发布包复制
+### 方式 B：从本地 SDK 包复制
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
-  -Source "D:\tool\MAA-v6.20.1-win-x64" `
-  -AdbSource "D:\tool\platform-tools"
+  -Source "D:\tool\MaaCore-sdk" `
+  -AdbSource "D:\tool\platform-tools" `
+  -Version "v0.1.1"
 ```
 
-默认会复制：
-
-- 8 个核心 DLL
-- 整个 `resource/`
-- ADB 三个文件
+默认会复制 `bin/` 下的全部 DLL，不复制 `include/`、PDB 和资源。
 
 ### 方式 C：命令行下载
 
 ```powershell
-# 指定版本，最稳定
-powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 -Version 6.20.1
+# 指定版本
+powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 -Version 0.1.1
 
 # 自动取 latest
 powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 -Version latest
 
 # 带代理
 powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 `
-  -Version 6.20.1 `
+  -Version 0.1.1 `
   -Proxy "http://127.0.0.1:7890"
 
 # 使用 GitHub 镜像前缀
 powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 `
-  -Version 6.20.1 `
+  -Version 0.1.1 `
   -Mirror "https://your-mirror.example/"
 ```
 
 脚本会：
 
-1. 下载 `MAA-v<版本>-win-x64.zip`
-2. 提取到临时目录
-3. 只复制核心 DLL 和 `resource/`
-4. 可选复制 ADB
-5. 校验关键文件
+1. 下载 `MaaCore-sdk-windows-x64-<版本>.zip`
+2. 提取 `bin/` 下的全部 DLL
+3. 替换 `core/` 下的 DLL，保留 `adb/`
+4. 写入 `.maago-core-version`
+5. 不修改 `resource/`
 
 `-DryRun` 只打印 URL 和目标路径，不下载、不修改文件。
 
 ### 更新资源（不更新核心）
 
 MAA 有独立的动态资源仓库 `MaaResource`，用于新活动关卡、公招数据等。它只包含“与核心版本无关”的动态文件，**必须已有基础 `resource/`**。
+
+- 已有 `resource/`：应用内“更新资源”会下载 MaaResource 并合并到 `resource/`。
+- 没有 `resource/`（首次安装）：会下载官方 MAA 完整发布包，只提取其中的 `resource/` 作为基础资源。
+- 下载量：动态更新几 MB；首次安装基础资源约 300 MB。
 
 应用内：“设置 → 更新 → 更新资源”，重启后生效。
 
@@ -201,24 +212,24 @@ powershell -ExecutionPolicy Bypass -File .\scripts\update-resource.ps1 -Proxy "h
 powershell -ExecutionPolicy Bypass -File .\scripts\update-resource.ps1 -DryRun
 ```
 
-脚本会把 `MaaResource` 的 `resource/` 内容合并覆盖到 `core/resource/`，不会删除基础资源。
+脚本会把 `MaaResource` 的 `resource/` 内容合并覆盖到 `resource/`，不会删除基础资源。
 
 ### 游戏界面更新与核心版本
 
-游戏大版本更新会改动主界面按钮、主题皮肤等界面元素，而这类**模板图随 MaaCore 发布，不随 `MaaResource` 动态资源更新**。如果游戏比 MaaCore 新，可能出现所有任务都在第一步识别失败。
+游戏大版本更新会改动主界面按钮、主题皮肤等界面元素，而这类**模板图在基础 `resource/` 里，不在 `MaaResource` 动态更新里，也不在 MaaCore SDK 包里**。如果游戏比资源新，可能出现所有任务都在第一步识别失败。
 
-例如 2026-11-01 的国服界面更新（新主题「天想」、新版 UI 尺寸）需要 **MaaCore v6.21.1 或更高版本**。遇到这种情况：
+例如 2026-11-01 的国服界面更新（新主题「天想」、新版 UI 尺寸）需要包含 `Default/Task-90.png` 等新模板的 `resource/`。遇到这种情况：
 
-- 在“设置 → 更新”检查并安装最新核心，然后重启。
-- 确认 `logs\startup.log` 中的核心版本已经是新版本。
-- 不要把旧核心的模板单独拷贝到新核心里，也不建议手工维护模板副本；直接更新完整核心即可。
+- 在“设置 → 更新”点“更新资源”。已有基础资源时只更新动态数据；没有基础资源时会下载官方 MAA 完整发布包并提取 `resource/`。
+- 确认 `resource/tasks/UiTheme/Task.json` 里有 `Task-90.png`。
+- 如果界面又发生较大变化，等待 MAA 发布新资源；不要在本地手工维护模板副本。
 
-MaaCore 更新通常会在游戏大版本更新后的几天内发布；暂时无法更新时，可以先在游戏内把主题切回默认/日间主题再运行。
+MaaCore SDK 本身不携带资源，更新 SDK 不会修改 `resource/`；两者需要分别更新。
 
 ### 版本兼容与回滚
 
-- 核心 DLL 和 `resource/` 最好来自同一个 MAA 发布包。
-- 只更新 `MaaResource` 动态资源通常没问题；如果任务报资源/模板错误，改用完整发布包覆盖。
+- MaaCore SDK 和 `resource/` 分开更新、分开回滚。
+- 只更新 `MaaResource` 动态资源通常没问题；如果任务报资源/模板错误，改用官方 MAA 完整发布包的 `resource/` 覆盖。
 - 更新前建议备份：
 
 ```powershell
@@ -277,7 +288,7 @@ Copy-Item .\core ..\core-backup-$(Get-Date -Format yyyyMMdd-HHmmss) -Recurse
 
 ## 6. 首次使用流程
 
-1. 确认 `core/MaaCore.dll` 和 `core/resource/version.json` 存在。
+1. 确认 `core/MaaCore.dll` 和 `resource/version.json` 存在。
 2. 启动 `MaaGO.exe`。
 3. 设置 → 连接，点击“连接诊断”。
 4. 七项全部通过后再开始任务：
@@ -320,7 +331,7 @@ Copy-Item .\core ..\core-backup-$(Get-Date -Format yyyyMMdd-HHmmss) -Recurse
 - 可以勾选多个关卡；右侧“执行顺序”按 1、2、3… 排列，支持上移、下移、删除。
 - 运行时会从第 1 个开始，自动跳过当前未开放的关卡（资源本按星期、活动按起止时间判断）；全部不可用时按第一个执行，并在日志中提示。
 - 不选任何关卡时使用游戏内“当前/上次”关卡。
-- 关卡数据来自本地 `core/resource/stages.json`；活动名称和开放时间来自 MAA 的 `StageActivityV2.json`，首次打开或超过 6 小时会通过“设置 → 更新”的代理下载并缓存到 `%APPDATA%\MaaGO\cache\`。
+- 关卡数据来自本地 `resource/stages.json`；活动名称和开放时间来自 MAA 的 `StageActivityV2.json`，首次打开或超过 6 小时会通过“设置 → 更新”的代理下载并缓存到 `%APPDATA%\MaaGO\cache\`。
 
 ## 8. 日志与诊断
 
@@ -379,7 +390,7 @@ Copy-Item .\core ..\core-backup-$(Get-Date -Format yyyyMMdd-HHmmss) -Recurse
 命令行脚本也支持同样的代理参数：
 
 ```powershell
-.\scripts\update-core.ps1 -Version 6.20.1 -Proxy "http://127.0.0.1:7890"
+.\scripts\update-core.ps1 -Version 0.1.1 -Proxy "http://127.0.0.1:7890"
 ```
 
 完整说明见 [proxy.zh-CN.md](./proxy.zh-CN.md)。
@@ -395,7 +406,7 @@ Copy-Item .\core ..\core-backup-$(Get-Date -Format yyyyMMdd-HHmmss) -Recurse
 | 现象 | 处理 |
 |---|---|
 | 设置里显示“MaaCore 未找到” | 检查 `core/MaaCore.dll` 是否存在；确认是 x64；确认 VC++ 运行库 |
-| 显示“MaaCore 资源加载失败” | `core/resource/` 缺失或损坏；重新执行 `update-core.ps1` |
+| 显示“MaaCore 资源加载失败” | `resource/` 缺失或损坏；重新执行 `update-core.ps1` |
 | ADB 可执行文件失败 | 放 `core/adb/adb.exe`，或在设置中填 ADB 路径 |
 | ADB 设备失败 | `adb devices` 是否 `device`；`unauthorized` 需在模拟器允许调试；网络 ADB 先 `adb connect` |
 | MaaCore 连接失败 | 先把触控模式切到 `ADB`；检查地址、模拟器配置、重启 ADB |
@@ -403,7 +414,7 @@ Copy-Item .\core ..\core-backup-$(Get-Date -Format yyyyMMdd-HHmmss) -Recurse
 | 截图测试失败 | 换截图增强/关闭增强；重启模拟器；确认分辨率正常 |
 | 触控测试失败 | 换触控模式；检查模拟器输入权限；MuMu 关闭应用保活 |
 | 任务一开始就失败 | 先看 `logs\core\core-YYYY-MM-DD.log` 和 `logs\run.log` 的具体错误 |
-| 游戏更新后所有任务都无法识别 | 游戏界面模板随 MaaCore 发布；在“设置 → 更新”安装最新核心并重启（2026-11 国服界面需要 v6.21.1 或更高版本） |
+| 游戏更新后所有任务都无法识别 | 界面模板在 `resource/` 里；在“设置 → 更新”更新资源，或安装包含新模板的官方 MAA 完整资源 |
 | 核心日志里只有“子任务未识别” | 表示 MaaCore 在当前截图里找不到下一步按钮；看紧随其后的“失败截图”，检查游戏是否停在弹窗、加载页或主题编辑页 |
 | 主界面主题不是默认主题 | 未知主题可能导致入口按钮模板不匹配；可在游戏内切回默认/日间主题，或等待 MaaCore 适配 |
 | 日志中文乱码 | 用 UTF-8 编辑器打开；核心日志是 UTF-8 |

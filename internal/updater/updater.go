@@ -25,12 +25,17 @@ import (
 )
 
 const (
-	apiLatest   = "https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/releases/latest"
-	resourceURL = "https://codeload.github.com/MaaAssistantArknights/MaaResource/zip/refs/heads/main"
-	userAgent   = "MaaGO-Updater"
+	coreAPI       = "https://api.github.com/repos/ksqeib/MaaCore/releases/latest"
+	coreRepo      = "ksqeib/MaaCore"
+	maaReleaseAPI = "https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/releases/latest"
+	resourceURL   = "https://codeload.github.com/MaaAssistantArknights/MaaResource/zip/refs/heads/main"
+	userAgent     = "MaaGO-Updater"
 )
 
-var assetPattern = regexp.MustCompile(`^MAA-v.+-win-x64\.zip$`)
+var (
+	coreAssetPattern = regexp.MustCompile(`^MaaCore-sdk-windows-x64-.*\.zip$`)
+	maaAssetPattern  = regexp.MustCompile(`^MAA-v.+-win-x64\.zip$`)
+)
 
 // ReleaseInfo describes one MaaCore release asset.
 type ReleaseInfo struct {
@@ -264,7 +269,9 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 	return nil
 }
 
-// DownloadResource downloads MaaResource hot-update files and stages them.
+// DownloadResource downloads a full base resource when none is installed, or
+// MaaResource hot-update files when the base resource already exists. The
+// staged resource is applied next to the core directory on restart.
 func (s *Service) DownloadResource(ctx context.Context) error {
 	if err := s.begin(); err != nil {
 		return err
@@ -276,10 +283,10 @@ func (s *Service) DownloadResource(ctx context.Context) error {
 		s.fail(err)
 		return err
 	}
-	if _, err := os.Stat(filepath.Join(s.coreDir, "resource", "version.json")); err != nil {
-		err = errors.New("base resource is missing; install a full MaaCore release first")
-		s.fail(err)
-		return err
+	resourceDir := filepath.Join(filepath.Dir(s.coreDir), "resource")
+	needBase := false
+	if _, err := os.Stat(filepath.Join(resourceDir, "version.json")); err != nil {
+		needBase = true
 	}
 
 	client, err := httpClient(cfg, "")
@@ -287,7 +294,7 @@ func (s *Service) DownloadResource(ctx context.Context) error {
 		s.fail(err)
 		return err
 	}
-	url := withMirror(resourceURL, cfg.Update.Mirror)
+
 	stageRoot := filepath.Join(s.updates, "resource-"+time.Now().Format("20060102-150405"))
 	cleanStaging(s.updates)
 	_ = os.RemoveAll(stageRoot)
@@ -297,8 +304,22 @@ func (s *Service) DownloadResource(ctx context.Context) error {
 	}
 	zipPath := filepath.Join(stageRoot, "resource.zip")
 
-	s.setStatus(Status{Stage: StageDownload, Message: "downloading MaaResource", Progress: 0})
-	if err := s.download(ctx, client, url, zipPath, ""); err != nil {
+	url := ""
+	version := ""
+	if needBase {
+		release, err := fetchOfficialLatest(ctx, client)
+		if err != nil {
+			s.fail(err)
+			return err
+		}
+		url = withMirror(release.AssetURL, cfg.Update.Mirror)
+		version = release.Tag
+		s.setStatus(Status{Stage: StageDownload, Message: "downloading base resource " + release.Tag, Version: release.Tag, Total: release.Size})
+	} else {
+		url = withMirror(resourceURL, cfg.Update.Mirror)
+		s.setStatus(Status{Stage: StageDownload, Message: "downloading MaaResource"})
+	}
+	if err := s.download(ctx, client, url, zipPath, version); err != nil {
 		s.fail(err)
 		return err
 	}
@@ -317,14 +338,19 @@ func (s *Service) DownloadResource(ctx context.Context) error {
 	if err := writePending(s.updates, pendingUpdate{
 		Kind:    "resource",
 		Staging: stagingResource,
+		Version: version,
 	}); err != nil {
 		s.fail(err)
 		return err
 	}
 
+	message := "resource update is ready; restart to apply"
+	if needBase {
+		message = "base resource is ready; restart to apply"
+	}
 	s.setStatus(Status{
 		Stage:        StageReady,
-		Message:      "resource update is ready; restart to apply",
+		Message:      message,
 		Progress:     100,
 		NeedsRestart: true,
 	})
@@ -422,7 +448,15 @@ func (p *progressWriter) Write(data []byte) (int, error) {
 }
 
 func fetchLatest(ctx context.Context, client *http.Client) (ReleaseInfo, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, apiLatest, nil)
+	return fetchRelease(ctx, client, coreAPI, coreAssetPattern)
+}
+
+func fetchOfficialLatest(ctx context.Context, client *http.Client) (ReleaseInfo, error) {
+	return fetchRelease(ctx, client, maaReleaseAPI, maaAssetPattern)
+}
+
+func fetchRelease(ctx context.Context, client *http.Client, api string, pattern *regexp.Regexp) (ReleaseInfo, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, api, nil)
 	if err != nil {
 		return ReleaseInfo{}, err
 	}
@@ -449,7 +483,7 @@ func fetchLatest(ctx context.Context, client *http.Client) (ReleaseInfo, error) 
 		return ReleaseInfo{}, err
 	}
 	for _, asset := range payload.Assets {
-		if assetPattern.MatchString(asset.Name) {
+		if pattern.MatchString(asset.Name) {
 			return ReleaseInfo{
 				Tag:       payload.TagName,
 				Version:   payload.TagName,
@@ -460,18 +494,17 @@ func fetchLatest(ctx context.Context, client *http.Client) (ReleaseInfo, error) 
 			}, nil
 		}
 	}
-	return ReleaseInfo{}, errors.New("no win-x64 release asset found")
+	return ReleaseInfo{}, errors.New("no matching release asset found")
 }
 
 func releaseForVersion(version string) ReleaseInfo {
 	tag := "v" + strings.TrimPrefix(strings.TrimSpace(version), "v")
-	number := strings.TrimPrefix(tag, "v")
-	asset := "MAA-v" + number + "-win-x64.zip"
+	asset := "MaaCore-sdk-windows-x64-" + tag + ".zip"
 	return ReleaseInfo{
 		Tag:       tag,
 		Version:   tag,
 		AssetName: asset,
-		AssetURL:  "https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases/download/" + tag + "/" + asset,
+		AssetURL:  "https://github.com/" + coreRepo + "/releases/download/" + tag + "/" + asset,
 	}
 }
 
@@ -547,17 +580,6 @@ func TestProxy(ctx context.Context, proxyURL string) ProxyTestResult {
 	}
 }
 
-var requiredFiles = map[string]bool{
-	"MaaCore.dll":              true,
-	"MaaUtils.dll":             true,
-	"MaaAdbControlUnit.dll":    true,
-	"MaaWin32ControlUnit.dll":  true,
-	"DirectML.dll":             true,
-	"fastdeploy_ppocr_maa.dll": true,
-	"onnxruntime_maa.dll":      true,
-	"opencv_world4_maa.dll":    true,
-}
-
 func extractCore(zipPath, staging, version string, status func(Status)) error {
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -568,8 +590,9 @@ func extractCore(zipPath, staging, version string, status func(Status)) error {
 	root := ""
 	found := false
 	for _, entry := range reader.File {
-		if strings.HasSuffix(entry.Name, "MaaCore.dll") {
-			root = strings.TrimSuffix(entry.Name, "MaaCore.dll")
+		name := strings.ReplaceAll(entry.Name, "\\", "/")
+		if name == "MaaCore.dll" || strings.HasSuffix(name, "/MaaCore.dll") {
+			root = strings.TrimSuffix(name, "MaaCore.dll")
 			found = true
 			break
 		}
@@ -580,23 +603,26 @@ func extractCore(zipPath, staging, version string, status func(Status)) error {
 
 	_ = os.RemoveAll(staging)
 	total := len(reader.File)
+	copied := 0
 	for index, entry := range reader.File {
 		if entry.FileInfo().IsDir() {
 			continue
 		}
-		relative := strings.TrimPrefix(entry.Name, root)
-		if root != "" && relative == entry.Name {
+		name := strings.ReplaceAll(entry.Name, "\\", "/")
+		relative := strings.TrimPrefix(name, root)
+		if root != "" && relative == name {
 			continue
 		}
-		relative = strings.ReplaceAll(relative, "\\", "/")
-		copyFile := requiredFiles[relative] || strings.HasPrefix(relative, "resource/")
-		if !copyFile {
+		// The SDK puts runtime DLLs in bin/ next to MaaCore.dll. Keep that flat
+		// directory only; headers, PDBs and docs are not needed at runtime.
+		if strings.Contains(relative, "/") || !strings.HasSuffix(strings.ToLower(relative), ".dll") {
 			continue
 		}
 		if err := extractEntry(entry, staging, relative); err != nil {
 			return err
 		}
-		if index%25 == 0 {
+		copied++
+		if index%10 == 0 {
 			status(Status{
 				Stage:    StageExtracting,
 				Message:  "extracting core",
@@ -604,6 +630,9 @@ func extractCore(zipPath, staging, version string, status func(Status)) error {
 				Version:  version,
 			})
 		}
+	}
+	if copied == 0 {
+		return errors.New("no runtime DLLs were found next to MaaCore.dll")
 	}
 	return nil
 }
@@ -693,11 +722,10 @@ func copyOptionalCoreFiles(sourceCore, stagingCore string) error {
 }
 
 func validateCore(coreDir string) error {
-	if _, err := os.Stat(filepath.Join(coreDir, "MaaCore.dll")); err != nil {
-		return errors.New("staged core has no MaaCore.dll")
-	}
-	if _, err := os.Stat(filepath.Join(coreDir, "resource", "version.json")); err != nil {
-		return errors.New("staged core has no resource/version.json")
+	for _, name := range []string{"MaaCore.dll", "MaaUtils.dll"} {
+		if _, err := os.Stat(filepath.Join(coreDir, name)); err != nil {
+			return fmt.Errorf("staged core has no %s", name)
+		}
 	}
 	return nil
 }

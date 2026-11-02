@@ -34,7 +34,7 @@ func Ordered(options map[string]any) []string {
 // Resolve picks the first currently available stage from the ordered list.
 // Unknown stages are treated as available so manually typed codes still work.
 // The returned note is meant for the run log.
-func Resolve(coreDir, clientType, cachePath string, options map[string]any, now time.Time) (string, string) {
+func Resolve(resourceDir, clientType, cachePath string, options map[string]any, now time.Time) (string, string) {
 	ordered := Ordered(options)
 	if len(ordered) == 0 {
 		return "", ""
@@ -44,7 +44,7 @@ func Resolve(coreDir, clientType, cachePath string, options map[string]any, now 
 		return "", ""
 	}
 
-	catalog, err := Build(coreDir, clientType, cachePath, now)
+	catalog, err := Build(resourceDir, clientType, cachePath, now)
 	if err != nil {
 		return first, ""
 	}

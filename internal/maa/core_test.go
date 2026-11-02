@@ -29,6 +29,13 @@ func TestCoreLoadsAndCreatesInstance(t *testing.T) {
 		t.Fatal("AsstGetVersion returned an empty version")
 	}
 	t.Logf("MaaCore version: %s", core.Version())
+	userDir, err := os.MkdirTemp("", "maago-core-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := core.SetUserDir(userDir); err != nil {
+		t.Fatalf("set user dir: %v", err)
+	}
 	if err := core.LoadResource(); err != nil {
 		t.Fatalf("load resource: %v", err)
 	}

@@ -14,10 +14,10 @@ func TestDownloadResourceStagesFiles(t *testing.T) {
 	}
 	root := t.TempDir()
 	core := filepath.Join(root, "core")
-	if err := os.MkdirAll(filepath.Join(core, "resource"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "resource"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(core, "resource", "version.json"), []byte("{}"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "resource", "version.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

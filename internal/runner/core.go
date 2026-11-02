@@ -163,7 +163,7 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 		stageOverride := ""
 		if task.Type == config.TaskFight {
 			cachePath := filepath.Join(apppath.CacheDir(), stages.ActivityCacheFile)
-			stageOverride, note := stages.Resolve(r.core.Dir(), cfg.Run.ClientType, cachePath, task.Options, time.Now())
+			stageOverride, note := stages.Resolve(r.core.ResourceDir(), cfg.Run.ClientType, cachePath, task.Options, time.Now())
 			if stageOverride != "" || note != "" {
 				message := "作战关卡：" + fallback(stageOverride, "当前/上次")
 				if plan := stages.Ordered(task.Options); len(plan) > 1 {

@@ -123,11 +123,11 @@ var tabLabel = map[string]string{
 
 // Build assembles the picker catalog. cachePath may be empty when activity data
 // is unavailable; the catalog still works from resource/stages.json.
-func Build(coreDir, clientType, cachePath string, now time.Time) (Catalog, error) {
+func Build(resourceDir, clientType, cachePath string, now time.Time) (Catalog, error) {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	entries, err := readStages(coreDir)
+	entries, err := readStages(resourceDir)
 	if err != nil {
 		return Catalog{}, err
 	}
@@ -217,8 +217,8 @@ func Build(coreDir, clientType, cachePath string, now time.Time) (Catalog, error
 	return catalog, nil
 }
 
-func readStages(coreDir string) ([]stagesFileEntry, error) {
-	path := filepath.Join(coreDir, "resource", "stages.json")
+func readStages(resourceDir string) ([]stagesFileEntry, error) {
+	path := filepath.Join(resourceDir, "stages.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)

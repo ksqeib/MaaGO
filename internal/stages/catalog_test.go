@@ -7,13 +7,9 @@ import (
 	"time"
 )
 
-func writeFixture(t *testing.T) (coreDir, cachePath string) {
+func writeFixture(t *testing.T) (resourceDir, cachePath string) {
 	t.Helper()
-	coreDir = t.TempDir()
-	resourceDir := filepath.Join(coreDir, "resource")
-	if err := os.MkdirAll(resourceDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	resourceDir = t.TempDir()
 	stagesJSON := `[
 		{"code":"1-7","apCost":6},
 		{"code":"CE-6","apCost":36},
@@ -59,7 +55,7 @@ func writeFixture(t *testing.T) (coreDir, cachePath string) {
 	if err := os.WriteFile(cachePath, []byte(activityJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return coreDir, cachePath
+	return resourceDir, cachePath
 }
 
 func TestBuildCatalog(t *testing.T) {
@@ -120,11 +116,11 @@ func TestResolveLegacyStage(t *testing.T) {
 }
 
 func TestBuildInstalledCore(t *testing.T) {
-	coreDir, err := filepath.Abs(filepath.Join("..", "..", "core"))
+	resourceDir, err := filepath.Abs(filepath.Join("..", "..", "resource"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(coreDir, "resource", "stages.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(resourceDir, "stages.json")); err != nil {
 		t.Skip("installed core resource is not available")
 	}
 	cachePath := filepath.Join(t.TempDir(), ActivityCacheFile)
@@ -134,7 +130,7 @@ func TestBuildInstalledCore(t *testing.T) {
 			cachePath = candidate
 		}
 	}
-	catalog, err := Build(coreDir, "Official", cachePath, time.Now())
+	catalog, err := Build(resourceDir, "Official", cachePath, time.Now())
 	t.Logf("source=%s", catalog.Source)
 	if err != nil {
 		t.Fatal(err)

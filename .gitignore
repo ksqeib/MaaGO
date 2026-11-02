@@ -22,9 +22,14 @@
 /core/resource/
 /core/debug/
 /core/cache/
+/core/.maago-core-version
+/resource/
 
 # Editor / OS
 .DS_Store
 Thumbs.db
 .idea
 
+
+# MaaCore user dir fallback
+/debug/

@@ -1,48 +1,58 @@
 param(
-    [string]$Source = "D:\tool\MAA-v6.18.0-win-x64",
-    [string]$AdbSource = "D:\tool\platform-tools"
+    [string]$Source = "",
+    [string]$AdbSource = "",
+    [string]$Version = "",
+    [string]$Destination = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$coreDir = Join-Path (Split-Path -Parent $PSScriptRoot) "core"
-$adbDir = Join-Path $coreDir "adb"
-New-Item -ItemType Directory -Force $coreDir, $adbDir | Out-Null
+$root = Split-Path -Parent $PSScriptRoot
+if (-not $Destination) {
+    $Destination = Join-Path $root "core"
+}
+if (-not $Source) {
+    throw "Pass -Source <MaaCore SDK directory containing bin\\MaaCore.dll or the DLLs directly>."
+}
+$Source = [IO.Path]::GetFullPath($Source)
+$Destination = [IO.Path]::GetFullPath($Destination)
+$resourceDir = Join-Path (Split-Path -Parent $Destination) "resource"
+New-Item -ItemType Directory -Force $Destination | Out-Null
 
-$dlls = @(
-    "MaaCore.dll",
-    "MaaUtils.dll",
-    "MaaAdbControlUnit.dll",
-    "MaaWin32ControlUnit.dll",
-    "DirectML.dll",
-    "fastdeploy_ppocr_maa.dll",
-    "onnxruntime_maa.dll",
-    "opencv_world4_maa.dll"
-)
+$coreDll = Get-ChildItem $Source -Recurse -File -Filter "MaaCore.dll" | Select-Object -First 1
+if (-not $coreDll) {
+    throw "MaaCore.dll was not found under $Source."
+}
+$binDir = $coreDll.Directory.FullName
+$dlls = Get-ChildItem $binDir -File -Filter "*.dll"
+if (-not $dlls) {
+    throw "No runtime DLLs were found next to MaaCore.dll."
+}
 
+Get-ChildItem $Destination -File -Filter "*.dll" -ErrorAction SilentlyContinue | Remove-Item -Force
 foreach ($dll in $dlls) {
-    $path = Join-Path $Source $dll
-    if (-not (Test-Path $path)) {
-        throw "Missing $path; pass -Source <MAA release directory>"
+    Copy-Item $dll.FullName $Destination -Force
+}
+if ($Version) {
+    Set-Content -Path (Join-Path $Destination ".maago-core-version") -Value $Version -NoNewline -Encoding ascii
+}
+
+if ($AdbSource) {
+    $adbTarget = Join-Path $Destination "adb"
+    New-Item -ItemType Directory -Force $adbTarget | Out-Null
+    foreach ($file in @("adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll")) {
+        $source = Join-Path $AdbSource $file
+        if (Test-Path $source) {
+            Copy-Item $source $adbTarget -Force
+        }
     }
-    Copy-Item $path $coreDir -Force
+} elseif (-not (Test-Path (Join-Path $Destination "adb\adb.exe"))) {
+    Write-Warning "adb\adb.exe is not present. Pass -AdbSource <platform-tools dir> or copy ADB manually."
 }
 
-$resourceSrc = Join-Path $Source "resource"
-if (-not (Test-Path $resourceSrc)) {
-    throw "Missing $resourceSrc"
-}
-$resourceDst = Join-Path $coreDir "resource"
-if (-not (Test-Path $resourceDst)) {
-    Copy-Item $resourceSrc $resourceDst -Recurse -Force
+if (-not (Test-Path (Join-Path $resourceDir "version.json"))) {
+    Write-Warning "resource\ is missing at $resourceDir. Run MaaGO once to install the base resource."
 }
 
-$adbFiles = @("adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll")
-foreach ($file in $adbFiles) {
-    $path = Join-Path $AdbSource $file
-    if (Test-Path $path) {
-        Copy-Item $path $adbDir -Force
-    }
-}
-
-Write-Output "MaaCore runtime installed in $coreDir"
+Write-Output "MaaCore runtime installed in $Destination"
+Write-Output "Resource directory: $resourceDir (not modified)"

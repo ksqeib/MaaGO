@@ -25,7 +25,7 @@ func TestDownloadCoreStages(t *testing.T) {
 	service := New(core, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
-	err := service.DownloadCore(ctx, "6.20.1")
+	err := service.DownloadCore(ctx, "0.1.1")
 	status := service.Status()
 	t.Logf("status=%+v err=%v", status, err)
 	if err != nil {

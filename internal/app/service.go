@@ -263,12 +263,12 @@ func (s *Service) OpenCoreLogsDir() error {
 // of MAA's activity snapshot; otherwise a cache older than 6 hours is refreshed.
 func (s *Service) GetStageCatalog(refresh bool) (stages.Catalog, error) {
 	cfg, _ := config.Load()
-	coreDir := ""
+	resourceDir := ""
 	if s.core != nil {
-		coreDir = s.core.Dir()
+		resourceDir = s.core.ResourceDir()
 	}
-	if coreDir == "" {
-		coreDir = maa.DefaultCoreDir()
+	if resourceDir == "" {
+		resourceDir = filepath.Join(filepath.Dir(maa.DefaultCoreDir()), "resource")
 	}
 	cachePath := filepath.Join(apppath.CacheDir(), stages.ActivityCacheFile)
 	stale := true
@@ -282,7 +282,7 @@ func (s *Service) GetStageCatalog(refresh bool) (stages.Catalog, error) {
 			cancel()
 		}
 	}
-	return stages.Build(coreDir, cfg.Run.ClientType, cachePath, time.Now())
+	return stages.Build(resourceDir, cfg.Run.ClientType, cachePath, time.Now())
 }
 
 // OpenDiagnosticsDir opens the diagnostic screenshot directory.

@@ -15,6 +15,7 @@ if (-not $Destination) {
     $Destination = Join-Path (Split-Path -Parent $PSScriptRoot) "core"
 }
 $Destination = [IO.Path]::GetFullPath($Destination)
+$resourceDir = Join-Path (Split-Path -Parent $Destination) "resource"
 if (-not $Proxy) {
     $Proxy = $env:HTTPS_PROXY
     if (-not $Proxy) { $Proxy = $env:HTTP_PROXY }
@@ -32,12 +33,11 @@ function Add-Mirror([string]$url) {
     return ($Mirror.TrimEnd("/") + "/" + $url)
 }
 
-$release = $null
-$assetUrl = $null
 $tag = ""
+$assetUrl = ""
 
 if ($Version -eq "latest") {
-    $apiUrl = Add-Mirror "https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/releases/latest"
+    $apiUrl = Add-Mirror "https://api.github.com/repos/ksqeib/MaaCore/releases/latest"
     if ($DryRun) {
         Write-Host "[dry-run] GET $apiUrl"
         Write-Host "[dry-run] destination: $Destination"
@@ -45,19 +45,19 @@ if ($Version -eq "latest") {
     }
     $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -UseBasicParsing @proxyArgs
     $tag = $release.tag_name
-    $asset = $release.assets | Where-Object { $_.name -match "^MAA-v.+-win-x64\.zip$" } | Select-Object -First 1
-    if (-not $asset) { throw "No win-x64 asset found in the latest release." }
+    $asset = $release.assets | Where-Object { $_.name -match "^MaaCore-sdk-windows-x64-.+\.zip$" } | Select-Object -First 1
+    if (-not $asset) { throw "No MaaCore SDK asset found in the latest release." }
     $assetUrl = Add-Mirror $asset.browser_download_url
 } else {
     $tag = "v" + $Version.TrimStart("v")
-    $versionNumber = $tag.TrimStart("v")
-    $assetName = "MAA-v$versionNumber-win-x64.zip"
-    $assetUrl = Add-Mirror "https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases/download/$tag/$assetName"
+    $assetName = "MaaCore-sdk-windows-x64-$tag.zip"
+    $assetUrl = Add-Mirror "https://github.com/ksqeib/MaaCore/releases/download/$tag/$assetName"
 }
 
 Write-Host "Release: $tag"
 Write-Host "Asset:   $assetUrl"
 Write-Host "Target:  $Destination"
+Write-Host "Resource: $resourceDir (unchanged)"
 
 if ($DryRun) {
     Write-Host "[dry-run] no files were changed"
@@ -78,39 +78,16 @@ try {
 
     $coreDll = Get-ChildItem $extractDir -Recurse -File -Filter "MaaCore.dll" | Select-Object -First 1
     if (-not $coreDll) { throw "MaaCore.dll was not found in the archive." }
-    $sourceRoot = $coreDll.Directory.FullName
+    $binDir = $coreDll.Directory.FullName
+    $dlls = Get-ChildItem $binDir -File -Filter "*.dll"
+    if (-not $dlls) { throw "No runtime DLLs were found next to MaaCore.dll." }
 
-    $required = @(
-        "MaaCore.dll",
-        "MaaUtils.dll",
-        "MaaAdbControlUnit.dll",
-        "MaaWin32ControlUnit.dll",
-        "DirectML.dll",
-        "fastdeploy_ppocr_maa.dll",
-        "onnxruntime_maa.dll",
-        "opencv_world4_maa.dll"
-    )
-    foreach ($file in $required) {
-        $source = Join-Path $sourceRoot $file
-        if (Test-Path $source) {
-            Copy-Item $source $Destination -Force
-            Write-Host "  copied $file"
-        } else {
-            Write-Warning "  missing $file in this release"
-        }
+    Get-ChildItem $Destination -File -Filter "*.dll" -ErrorAction SilentlyContinue | Remove-Item -Force
+    foreach ($dll in $dlls) {
+        Copy-Item $dll.FullName $Destination -Force
+        Write-Host "  copied $($dll.Name)"
     }
-
-    $resourceSource = Join-Path $sourceRoot "resource"
-    if (-not (Test-Path $resourceSource)) {
-        throw "resource/ was not found next to MaaCore.dll."
-    }
-    $resourceTarget = Join-Path $Destination "resource"
-    if (Test-Path $resourceTarget) {
-        Write-Host "Replacing resource/ ..."
-        Remove-Item $resourceTarget -Recurse -Force
-    }
-    Copy-Item $resourceSource $resourceTarget -Recurse -Force
-    Write-Host "  copied resource/"
+    Set-Content -Path (Join-Path $Destination ".maago-core-version") -Value $tag -NoNewline -Encoding ascii
 
     if ($AdbSource) {
         $adbTarget = Join-Path $Destination "adb"
@@ -124,6 +101,10 @@ try {
         }
     } elseif (-not (Test-Path (Join-Path $Destination "adb\adb.exe"))) {
         Write-Warning "adb\adb.exe is not present. Pass -AdbSource <platform-tools dir> or copy ADB manually."
+    }
+
+    if (-not (Test-Path (Join-Path $resourceDir "version.json"))) {
+        Write-Warning "resource\ is missing at $resourceDir. Run MaaGO once or install the base resource."
     }
 
     Write-Host ""

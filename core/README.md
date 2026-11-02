@@ -1,30 +1,39 @@
 # MaaCore runtime
 
-This directory holds the MaaCore runtime and is intentionally kept separate
-from the launcher binary:
+This directory holds the MaaCore SDK binaries only. Resource data lives in the
+sibling `resource/` directory, so core updates and resource updates are
+independent:
 
 ```
-core/
+core/                          # ksqeib/MaaCore SDK
 ├── MaaCore.dll
 ├── MaaUtils.dll
-├── MaaAdbControlUnit.dll
-├── MaaWin32ControlUnit.dll
 ├── DirectML.dll
 ├── fastdeploy_ppocr_maa.dll
 ├── onnxruntime_maa.dll
 ├── opencv_world4_maa.dll
-├── adb/
-│   ├── adb.exe
-│   ├── AdbWinApi.dll
-│   └── AdbWinUsbApi.dll
-└── resource/
+├── .maago-core-version
+└── adb/
+    ├── adb.exe
+    ├── AdbWinApi.dll
+    └── AdbWinUsbApi.dll
+
+resource/                      # MAA resource (sibling of core)
+├── version.json
+├── tasks/
+├── template/
+├── onnx/
+└── ...
 ```
 
-`MaaCore.dll` and the `resource/` tree are large binaries and are ignored by
-git. Recreate the directory from an official MAA release with:
+`MaaCore.dll` and the runtime DLLs are large binaries and are ignored by git.
+Recreate them from a local SDK package:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ..\scripts\install-core.ps1
+powershell -ExecutionPolicy Bypass -File ..\scripts\install-core.ps1 `
+  -Source "D:\tool\MaaCore-sdk" `
+  -AdbSource "D:\tool\platform-tools" `
+  -Version "v0.1.1"
 ```
 
 The launcher looks for `core/` in this order:
@@ -35,16 +44,17 @@ The launcher looks for `core/` in this order:
 4. `<working dir>\core`
 
 MaaCore is loaded with `LOAD_WITH_ALTERED_SEARCH_PATH`, so its sibling DLLs are
-resolved from this directory and never need to be copied next to the launcher.
+resolved from this directory. `AsstLoadResource` is pointed at the parent of
+`resource/`, not at `core/`.
 
 ## Updating
 
 ```powershell
-# Rebuild this directory from a local MAA release
-..\scripts\install-core.ps1 -Source "D:\tool\MAA-v6.20.1-win-x64" -AdbSource "D:\tool\platform-tools"
+# Rebuild core from a local SDK package (does not touch resource/)
+..\scripts\install-core.ps1 -Source "D:\tool\MaaCore-sdk" -Version "v0.1.1"
 
-# Download a full release (core + resource)
-..\scripts\update-core.ps1 -Version 6.20.1
+# Download the latest SDK release (does not touch resource/)
+..\scripts\update-core.ps1 -Version latest
 
 # Merge MaaResource hot-update data into resource/
 ..\scripts\update-resource.ps1

@@ -120,6 +120,11 @@ func main() {
 	}
 
 	coreDir := maa.DefaultCoreDir()
+	if message, err := updater.MigrateLayout(coreDir); err != nil {
+		log.Printf("startup: migrate resource layout: %v", err)
+	} else if message != "" {
+		log.Printf("startup: %s", message)
+	}
 	if message, err := updater.ApplyPending(coreDir); err != nil {
 		log.Printf("startup: apply pending update: %v", err)
 	} else if message != "" {

@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,7 +11,11 @@ import (
 )
 
 func TestCoreRunnerRequiresAddress(t *testing.T) {
-	t.Setenv("APPDATA", t.TempDir())
+	appData, err := os.MkdirTemp("", "maago-runner-user-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("APPDATA", appData)
 	if _, err := config.Reload(); err != nil {
 		t.Fatal(err)
 	}

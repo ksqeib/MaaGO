@@ -2,7 +2,7 @@
 
 MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArknights）桌面客户端，参考 LeviLauncher 的界面结构与视觉风格。
 
-已通过 MaaCore 的 C API（`AsstCaller`）接入真实核心；MaaCore 与依赖 DLL、`resource/`、ADB 全部放在独立的 `core/` 目录，不会散落在程序根目录。
+已通过 MaaCore 的 C API（`AsstCaller`）接入真实核心；MaaCore 与依赖 DLL、ADB 放在独立的 `core/` 目录，资源单独放在 `resource/`，不会散落在程序根目录。
 
 ## 文档
 
@@ -35,45 +35,56 @@ MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArkn
 
 ## MaaCore 目录
 
+MaaCore 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 SDK 发布包，资源和 core 分开：
+
 ```
-core/
+core/                  # 只放 SDK 二进制
 ├── MaaCore.dll
 ├── MaaUtils.dll
-├── MaaAdbControlUnit.dll
-├── MaaWin32ControlUnit.dll
 ├── DirectML.dll
 ├── fastdeploy_ppocr_maa.dll
 ├── onnxruntime_maa.dll
 ├── opencv_world4_maa.dll
-├── adb/
-│   ├── adb.exe
-│   ├── AdbWinApi.dll
-│   └── AdbWinUsbApi.dll
-└── resource/
+├── .maago-core-version
+└── adb/
+    ├── adb.exe
+    ├── AdbWinApi.dll
+    └── AdbWinUsbApi.dll
+
+resource/              # MAA 资源
+├── version.json
+├── tasks/
+├── template/
+├── onnx/
+└── global/
 ```
 
 详细说明见 [core-runtime.zh-CN.md](./docs/core-runtime.zh-CN.md)。
 
-从官方 MAA 发布包重新生成：
+从本地 SDK 包重新生成：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
+  -Source "D:\path\to\MaaCore-sdk" `
+  -AdbSource "D:\path\to\platform-tools" `
+  -Version "v0.1.1"
 ```
 
-默认从 `D:\tool\MAA-v6.18.0-win-x64` 和 `D:\tool\platform-tools` 复制，可用参数覆盖：
+从 GitHub 下载：
 
 ```powershell
-.\scripts\install-core.ps1 -Source "D:\path\to\MAA" -AdbSource "D:\path\to\platform-tools"
+.\scripts\update-core.ps1 -Version latest
 ```
 
 查找顺序：`%MAAGO_CORE_DIR%` → `<exe>/core` → `<exe>/../core` → `<cwd>/core`。
 `MaaCore.dll` 使用 `LOAD_WITH_ALTERED_SEARCH_PATH` 加载，依赖 DLL 会从 `core/` 解析。
+资源固定从 core 同级目录的 `resource/` 加载；旧的 `core/resource/` 会在启动时自动迁移。
 
 如果 `core/` 不存在，程序会自动降级为界面演示模式，并在仪表盘/设置中提示。
 
 ## 使用真实核心
 
-1. 确认 `core/MaaCore.dll` 与 `core/resource/` 存在。
+1. 确认 `core/MaaCore.dll` 与 `resource/version.json` 存在。
 2. 在“设置 → 连接”填写模拟器 ADB 地址，例如 `127.0.0.1:16384`；留空时会自动扫描常见模拟器端口，并读取 `adb devices` 的结果。
 3. 确认 ADB 可用：`core/adb/adb.exe devices` 能看到设备。
 4. 回到仪表盘点击“一键开始”。
@@ -124,17 +135,19 @@ wails3 task dev
   - 任务失败时追加“最后识别失败”和“失败截图”路径，日志页可直接打开截图目录
 - 诊断截图：`%APPDATA%\MaaGO\cache\diagnostics\`
 - MaaCore 失败截图：`%APPDATA%\MaaGO\core\debug\interface\`
-- 更新暂存：`<core 同级>\.maago-updates\`
-- 旧核心备份：`<core 同级>\core.backup\`
+- 资源目录：`<程序目录>\resource\`
+- 更新暂存：`<程序目录>\.maago-updates\`
+- 旧核心备份：`<程序目录>\core.backup\`
 
-> 游戏大版本更新会改动主界面模板，而模板随 MaaCore 发布、不随动态资源更新。遇到整队任务无法识别时，请更新到最新的完整 MaaCore（2026-11 国服界面需要 v6.21.1 或更高）。
+> 游戏大版本更新会改动主界面模板，而模板随 MaaCore/资源发布、不随动态数据更新。遇到整队任务无法识别时，请更新到最新的 MaaCore SDK 或完整资源。
 
 ## 目录结构
 
 ```
 .
 ├── build/                  # Wails 构建配置、图标、Windows 清单
-├── core/                   # MaaCore 运行时（DLL / adb / resource，二进制不入库）
+├── core/                   # MaaCore SDK 二进制（DLL / adb，不入库）
+├── resource/               # MAA 资源（不入库）
 ├── frontend/
 │   └── src/
 │       ├── assets/locales/ # zh_CN / en_US
