@@ -24,7 +24,9 @@ func TestRealCoreRun(t *testing.T) {
 		t.Skip("set MAAGO_TEST_ADB_ADDRESS")
 	}
 
-	t.Setenv("APPDATA", t.TempDir())
+	appData := t.TempDir()
+	t.Setenv("APPDATA", appData)
+	t.Setenv("MAAGO_CONFIG_DIR", appData)
 	if _, err := config.Reload(); err != nil {
 		t.Fatal(err)
 	}

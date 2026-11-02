@@ -33,3 +33,6 @@ Thumbs.db
 
 # MaaCore user dir fallback
 /debug/
+
+# Local configuration
+/config.json

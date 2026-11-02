@@ -21,7 +21,7 @@ func TestBuildFightParamsExpiringOnly(t *testing.T) {
 			"medicineExpireDays": 1,
 			"stone":              false,
 			"stoneCount":         2,
-			"series":             "1",
+			"series":             "0",
 		},
 	}
 	raw, err := BuildTaskParams(task, cfg)
@@ -40,6 +40,9 @@ func TestBuildFightParamsExpiringOnly(t *testing.T) {
 	}
 	if got := params["stone"]; got != float64(0) {
 		t.Fatalf("stone = %v, want 0", got)
+	}
+	if got := params["series"]; got != float64(0) {
+		t.Fatalf("series = %v, want auto (0)", got)
 	}
 	if got := params["times"]; got != float64(math.MaxInt32) {
 		t.Fatalf("times = %v, want MaxInt32", got)

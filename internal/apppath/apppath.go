@@ -42,8 +42,19 @@ func Root() string {
 	return dir
 }
 
-// ConfigPath is the location of config.json.
+// ConfigPath is the location of config.json. It lives next to the executable
+// so the whole configuration can be copied with the program directory.
+// MAAGO_CONFIG_DIR overrides the directory (used by tests).
 func ConfigPath() string {
+	if dir := strings.TrimSpace(os.Getenv("MAAGO_CONFIG_DIR")); dir != "" {
+		return filepath.Join(dir, "config.json")
+	}
+	return filepath.Join(InstallDir(), "config.json")
+}
+
+// LegacyConfigPath is the pre-v7 per-user config location. It is only used for
+// a one-time migration to the program directory.
+func LegacyConfigPath() string {
 	return filepath.Join(Root(), "config.json")
 }
 

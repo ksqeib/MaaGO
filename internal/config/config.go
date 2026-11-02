@@ -17,7 +17,7 @@ import (
 )
 
 // ConfigVersion is bumped when the on-disk shape changes.
-const ConfigVersion = 6
+const ConfigVersion = 7
 
 var (
 	mu       sync.RWMutex
@@ -246,7 +246,7 @@ func defaultTasks() []TaskConfig {
 			"medicineExpireDays": 1,
 			"stone":              false,
 			"stoneCount":         1,
-			"series":             "1",
+			"series":             "0",
 		}},
 		{ID: "task-infrast", Type: TaskInfrast, Enabled: true, Options: map[string]any{
 			"mode":          "default",
@@ -314,6 +314,14 @@ func reloadLocked() (AppConfig, error) {
 	cfg := Default()
 
 	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		if legacy := apppath.LegacyConfigPath(); legacy != "" && legacy != path {
+			if legacyData, legacyErr := os.ReadFile(legacy); legacyErr == nil {
+				data, err = legacyData, nil
+				log.Printf("config: migrated %s to %s", legacy, path)
+			}
+		}
+	}
 	switch {
 	case err == nil:
 		data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
@@ -523,6 +531,39 @@ func (c *AppConfig) migrate() {
 					task.Options["stages"] = []any{legacy}
 				} else {
 					task.Options["stages"] = []any{}
+				}
+			}
+		}
+	}
+	if c.ConfigVersion < 7 {
+		for i := range c.Tasks {
+			task := &c.Tasks[i]
+			if task.Type != TaskFight {
+				continue
+			}
+			if task.Options == nil {
+				task.Options = map[string]any{}
+			}
+			series, ok := task.Options["series"]
+			if !ok {
+				task.Options["series"] = "0"
+				continue
+			}
+			// Up to v6 the UI default was 1x, which makes MaaCore fight one
+			// round at a time. 0 lets MaaCore adjust the auto-repeat count
+			// according to the current sanity.
+			switch value := series.(type) {
+			case string:
+				if value == "1" {
+					task.Options["series"] = "0"
+				}
+			case float64:
+				if value == 1 {
+					task.Options["series"] = "0"
+				}
+			case int:
+				if value == 1 {
+					task.Options["series"] = "0"
 				}
 			}
 		}

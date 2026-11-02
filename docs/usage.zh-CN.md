@@ -28,6 +28,7 @@
 ```text
 MaaGO/
 ├── MaaGO.exe
+├── config.json                 # 配置（和程序放一起，方便复制）
 ├── core/                       # MaaCore SDK（只放二进制）
 │   ├── MaaCore.dll
 │   ├── MaaUtils.dll
@@ -55,11 +56,10 @@ MaaGO/
 └── core.backup\                # 上一版 core 备份
 ```
 
-用户数据不在程序目录：
+用户数据（日志/缓存）仍然在 `%APPDATA%`：
 
 ```text
 %APPDATA%\MaaGO\
-├── config.json
 ├── core\                    # MaaCore 的 UserDir（原始日志和缓存）
 │   ├── debug\asst.log
 │   └── cache\
@@ -332,6 +332,7 @@ Copy-Item .\core ..\core-backup-$(Get-Date -Format yyyyMMdd-HHmmss) -Recurse
 - 运行时会从第 1 个开始，自动跳过当前未开放的关卡（资源本按星期、活动按起止时间判断）；全部不可用时按第一个执行，并在日志中提示。
 - 不选任何关卡时使用游戏内“当前/上次”关卡。
 - 关卡数据来自本地 `resource/stages.json`；活动名称和开放时间来自 MAA 的 `StageActivityV2.json`，首次打开或超过 6 小时会通过“设置 → 更新”的代理下载并缓存到 `%APPDATA%\MaaGO\cache\`。
+- “代理倍率”默认是 **自动**：MaaCore 会根据当前理智和关卡消耗调整连战次数（不是固定 1 次一打），日志里会显示“本次连战 N 次”。
 
 ## 8. 日志与诊断
 

@@ -70,10 +70,15 @@ func formatExtra(what string, raw json.RawMessage) string {
 	case "FightTimes":
 		cost := integer(payload, "sanity_cost")
 		finished := integer(payload, "times_finished")
-		if boolean(payload["finished"]) {
-			return fmt.Sprintf("作战完成：%d 次，每次 %d 理智", finished, cost)
+		series := integer(payload, "series")
+		seriesText := ""
+		if series > 0 {
+			seriesText = fmt.Sprintf("，本次连战 %d 次", series)
 		}
-		return fmt.Sprintf("作战进行：已打 %d 次，每次 %d 理智", finished, cost)
+		if boolean(payload["finished"]) {
+			return fmt.Sprintf("作战完成：已打 %d 次，每次 %d 理智%s", finished, cost, seriesText)
+		}
+		return fmt.Sprintf("作战进行：已打 %d 次，每次 %d 理智%s", finished, cost, seriesText)
 	case "SanityBeforeStage":
 		return fmt.Sprintf("当前理智：%d / %d", integer(payload, "current_sanity"), integer(payload, "max_sanity"))
 	case "ExceededLimit":

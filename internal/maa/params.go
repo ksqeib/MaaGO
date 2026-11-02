@@ -114,7 +114,7 @@ func BuildTaskParamsWithStage(task config.TaskConfig, cfg config.AppConfig, stag
 			"medicine_expire_days": expireDays,
 			"stone":                stone,
 			"times":                times,
-			"series":               optInt(options, "series", 1),
+			"series":               optInt(options, "series", 0),
 		}
 		stage := strings.TrimSpace(stageOverride)
 		if stage == "" {

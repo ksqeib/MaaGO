@@ -125,7 +125,7 @@ wails3 task dev
 
 ## 数据位置
 
-- 配置：`%APPDATA%\MaaGO\config.json`
+- 配置：`<程序目录>\config.json`（旧版 `%APPDATA%\MaaGO\config.json` 会自动迁移）
 - 启动日志：`%APPDATA%\MaaGO\logs\startup.log`
 - 任务日志：`%APPDATA%\MaaGO\logs\run.log`
 - 核心日志：`%APPDATA%\MaaGO\logs\core\core-YYYY-MM-DD.log`

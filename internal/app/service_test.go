@@ -11,7 +11,9 @@ import (
 )
 
 func TestStartQueueCompletesAndRecordsLastRun(t *testing.T) {
-	t.Setenv("APPDATA", t.TempDir())
+	appData := t.TempDir()
+	t.Setenv("APPDATA", appData)
+	t.Setenv("MAAGO_CONFIG_DIR", appData)
 
 	if _, err := config.Reload(); err != nil {
 		t.Fatalf("reload config: %v", err)

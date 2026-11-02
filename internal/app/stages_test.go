@@ -22,6 +22,7 @@ func TestGetStageCatalogFromInstalledCore(t *testing.T) {
 
 	appData := t.TempDir()
 	t.Setenv("APPDATA", appData)
+	t.Setenv("MAAGO_CONFIG_DIR", appData)
 	cacheDir := filepath.Join(appData, "MaaGO", "cache")
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatal(err)

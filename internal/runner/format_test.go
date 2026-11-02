@@ -34,8 +34,8 @@ func TestFormatExtra(t *testing.T) {
 		},
 		{
 			what: "FightTimes",
-			raw:  `{"sanity_cost":36,"series":1,"times_finished":1,"finished":true}`,
-			want: "作战完成：1 次，每次 36 理智",
+			raw:  `{"sanity_cost":36,"series":6,"times_finished":1,"finished":true}`,
+			want: "作战完成：已打 1 次，每次 36 理智，本次连战 6 次",
 		},
 		{
 			what: "SanityBeforeStage",

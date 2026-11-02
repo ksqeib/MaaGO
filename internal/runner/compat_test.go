@@ -40,6 +40,7 @@ func TestCompatRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("APPDATA", appData)
+	t.Setenv("MAAGO_CONFIG_DIR", appData)
 	t.Logf("APPDATA=%s", appData)
 	if _, err := config.Reload(); err != nil {
 		t.Fatal(err)
