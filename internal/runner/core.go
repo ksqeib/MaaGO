@@ -28,6 +28,7 @@ type coreDetails struct {
 	Subtask       string          `json:"subtask"`
 	PreTask       string          `json:"pre_task"`
 	First         []string        `json:"first"`
+	Why           string          `json:"why"`
 }
 
 // failureTrace keeps the last recognition attempts of a task chain so a failed
@@ -257,7 +258,15 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 				r.emitTask(TaskState{TaskID: task.ID, Status: TaskError})
 				r.updateCoreProgress(completed+failedTasks, total)
 			}
-			r.SystemLog("error", fmt.Sprintf("任务出错：%s %s", fallback(taskName, details.TaskChain), summarize(details.Details)))
+			detail := formatExtra("", details.Details)
+			if detail == "" {
+				detail = summarize(details.Details)
+			}
+			message := fmt.Sprintf("任务出错：%s", fallback(taskName, details.TaskChain))
+			if detail != "" {
+				message += " · " + detail
+			}
+			r.SystemLog("error", message)
 			if trace := traces[details.TaskChain]; trace != nil && len(trace.first) > 0 {
 				hint := strings.Join(trace.first, " / ")
 				if trace.preTask != "" {
@@ -334,17 +343,25 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 			case "FastestWayToScreencap":
 				text = "截图方式信息"
 			}
-			if extra := summarize(details.Details); extra != "" {
-				text += " · " + extra
+			if detail := formatConnection(details.What, details.Details, details.Why); detail != "" {
+				text = detail
 			}
 			r.SystemLog(level, text)
 
 		case maa.MsgInitFailed:
 			anyError = true
-			r.SystemLog("error", fmt.Sprintf("MaaCore 初始化失败：%s", summarize(details.Details)))
+			detail := formatExtra("", details.Details)
+			if detail == "" {
+				detail = summarize(details.Details)
+			}
+			r.SystemLog("error", fmt.Sprintf("MaaCore 初始化失败：%s", detail))
 		case maa.MsgInternalError:
 			anyError = true
-			r.SystemLog("error", fmt.Sprintf("MaaCore 内部错误：%s", summarize(details.Details)))
+			detail := formatExtra("", details.Details)
+			if detail == "" {
+				detail = summarize(details.Details)
+			}
+			r.SystemLog("error", fmt.Sprintf("MaaCore 内部错误：%s", detail))
 		case maa.MsgAllTasksCompleted:
 			return true
 		}
@@ -473,13 +490,12 @@ func (r *Runner) updateCoreProgress(finished, total int) {
 }
 
 func (r *Runner) SystemLogCoreExtra(level string, details coreDetails) {
-	text := strings.TrimSpace(details.What)
-	extra := summarize(details.Details)
-	switch {
-	case text != "" && extra != "":
-		text += " · " + extra
-	case text == "":
-		text = extra
+	text := formatExtra(details.What, details.Details)
+	if text == "" {
+		text = summarize(details.Details)
+	}
+	if text == "" {
+		text = strings.TrimSpace(details.What)
 	}
 	if text != "" {
 		r.SystemLog(level, text)
