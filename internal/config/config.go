@@ -17,7 +17,7 @@ import (
 )
 
 // ConfigVersion is bumped when the on-disk shape changes.
-const ConfigVersion = 5
+const ConfigVersion = 6
 
 var (
 	mu       sync.RWMutex
@@ -238,6 +238,7 @@ func defaultTasks() []TaskConfig {
 		}},
 		{ID: "task-fight", Type: TaskFight, Enabled: true, Options: map[string]any{
 			"stage":              "",
+			"stages":             []any{},
 			"times":              0,
 			"medicine":           false,
 			"medicineCount":      1,
@@ -502,6 +503,28 @@ func (c *AppConfig) migrate() {
 			// consumes normal potions before applying the expiring-medicine
 			// window, so keep normal potions opt-in and default to expiring ones.
 			task.Options["medicine"] = false
+		}
+	}
+	if c.ConfigVersion < 6 {
+		for i := range c.Tasks {
+			task := &c.Tasks[i]
+			if task.Type != TaskFight {
+				continue
+			}
+			if task.Options == nil {
+				task.Options = map[string]any{}
+			}
+			if _, ok := task.Options["stages"]; !ok {
+				legacy := ""
+				if value, ok := task.Options["stage"].(string); ok {
+					legacy = strings.TrimSpace(value)
+				}
+				if legacy != "" {
+					task.Options["stages"] = []any{legacy}
+				} else {
+					task.Options["stages"] = []any{}
+				}
+			}
 		}
 	}
 	c.MinimizeToTray = defaults.MinimizeToTray

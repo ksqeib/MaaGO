@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 
+import { StagePlanField } from "@/components/StagePlanField";
 import { Switch } from "@/components/Switch";
 import type { FieldDef } from "@/data/tasks";
 import { cn } from "@/utils/cn";
@@ -93,6 +94,15 @@ export const Field = ({ field, value, onChange }: FieldProps) => {
           </div>
         );
       }
+      case "stage-plan": {
+        const selected = Array.isArray(value) ? (value as string[]) : [];
+        return (
+          <StagePlanField
+            onChange={(next) => onChange(next)}
+            value={selected}
+          />
+        );
+      }
       default:
         return (
           <input
@@ -106,7 +116,7 @@ export const Field = ({ field, value, onChange }: FieldProps) => {
     }
   })();
 
-  const isWide = field.type === "multiselect";
+  const isWide = field.type === "multiselect" || field.type === "stage-plan";
 
   return (
     <div className={cn("flex flex-col gap-1.5", isWide && "sm:col-span-2")}>

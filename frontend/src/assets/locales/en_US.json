@@ -136,6 +136,47 @@
     "shots_dir": "Failure shots",
     "count": "{{count}} entries"
   },
+  "stages": {
+    "current_last": "No stages selected (current/last)",
+    "pick": "Choose stages",
+    "edit": "Edit stages",
+    "title": "Choose battle stages",
+    "subtitle": "Select multiple stages and order them on the right. Closed stages are skipped at runtime.",
+    "refresh": "Refresh stage data",
+    "search_placeholder": "Search stage, name or event…",
+    "search_results": "Search results",
+    "selected": "Selected",
+    "plan": "Run order",
+    "plan_empty": "No stages selected. Leave empty to use the current/last stage.",
+    "plan_hint": "Starts from #1 and skips stages that are currently closed.",
+    "plan_hint_empty": "Leave empty to use the current/last stage.",
+    "clear": "Clear",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "loading": "Loading stage data…",
+    "load_failed": "Failed to load stage data",
+    "empty": "No matching stages",
+    "open": "Open",
+    "closed": "Closed",
+    "unknown": "Not in the current stage list",
+    "source": "Source",
+    "tab": {
+      "main": "Main",
+      "resource": "Resources",
+      "event": "Events",
+      "annihilation": "Annihilation",
+      "other": "Other"
+    },
+    "group": {
+      "main": "Main story",
+      "resource": "Resources",
+      "chips": "Chips",
+      "annihilation": "Annihilation",
+      "other": "Other",
+      "chapter": "Chapter {{number}}",
+      "event": "Event"
+    }
+  },
   "settings": {
     "title": "Settings",
     "subtitle": "Connection, run, schedule, notifications and appearance.",

@@ -2,7 +2,7 @@ import { defaultTasks } from "@/data/tasks";
 import type { AppConfig } from "@/types/maa";
 
 export const DEFAULT_CONFIG: AppConfig = {
-  configVersion: 5,
+  configVersion: 6,
   windowWidth: 1100,
   windowHeight: 720,
   windowMaximised: false,

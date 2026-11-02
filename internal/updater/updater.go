@@ -507,6 +507,11 @@ func httpClient(cfg config.AppConfig, overrideProxy string) (*http.Client, error
 	return &http.Client{Transport: transport}, nil
 }
 
+// NewHTTPClient builds the same proxy-aware client used by the updater.
+func NewHTTPClient(cfg config.AppConfig) (*http.Client, error) {
+	return httpClient(cfg, "")
+}
+
 // TestProxy checks GitHub API reachability through a proxy URL.
 func TestProxy(ctx context.Context, proxyURL string) ProxyTestResult {
 	cfg, _ := config.Load()

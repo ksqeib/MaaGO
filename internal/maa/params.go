@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"MaaGO/internal/config"
+	"MaaGO/internal/stages"
 )
 
 // TaskTypeName maps the config task type to the MaaCore task name.
@@ -51,6 +52,13 @@ func TaskTypeFromChain(chain string) (config.TaskType, bool) {
 
 // BuildTaskParams converts one UI task into the MaaCore JSON schema.
 func BuildTaskParams(task config.TaskConfig, cfg config.AppConfig) (string, error) {
+	return BuildTaskParamsWithStage(task, cfg, "")
+}
+
+// BuildTaskParamsWithStage is BuildTaskParams with an explicit stage override.
+// The runner uses it after resolving the ordered stage plan against today's
+// availability.
+func BuildTaskParamsWithStage(task config.TaskConfig, cfg config.AppConfig, stageOverride string) (string, error) {
 	options := task.Options
 	var params map[string]any
 
@@ -108,7 +116,19 @@ func BuildTaskParams(task config.TaskConfig, cfg config.AppConfig) (string, erro
 			"times":                times,
 			"series":               optInt(options, "series", 1),
 		}
-		if stage := strings.TrimSpace(optString(options, "stage", "")); stage != "" {
+		stage := strings.TrimSpace(stageOverride)
+		if stage == "" {
+			stage = strings.TrimSpace(optString(options, "stage", ""))
+		}
+		if stage == "" {
+			for _, candidate := range stages.Ordered(options) {
+				if candidate = strings.TrimSpace(candidate); candidate != "" {
+					stage = candidate
+					break
+				}
+			}
+		}
+		if stage != "" {
 			params["stage"] = stage
 		}
 		if clientType := cfg.Run.ClientType; clientType != "" {

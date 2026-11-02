@@ -11,10 +11,12 @@ import (
 	"sync"
 	"time"
 
+	"MaaGO/internal/apppath"
 	"MaaGO/internal/config"
 	"MaaGO/internal/connection"
 	"MaaGO/internal/corelog"
 	"MaaGO/internal/maa"
+	"MaaGO/internal/stages"
 )
 
 type coreDetails struct {
@@ -157,7 +159,22 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 
 	taskByType := make(map[config.TaskType]config.TaskConfig, len(tasks))
 	for _, task := range tasks {
-		params, err := maa.BuildTaskParams(task, cfg)
+		stageOverride := ""
+		if task.Type == config.TaskFight {
+			cachePath := filepath.Join(apppath.CacheDir(), stages.ActivityCacheFile)
+			stageOverride, note := stages.Resolve(r.core.Dir(), cfg.Run.ClientType, cachePath, task.Options, time.Now())
+			if stageOverride != "" || note != "" {
+				message := "作战关卡：" + fallback(stageOverride, "当前/上次")
+				if plan := stages.Ordered(task.Options); len(plan) > 1 {
+					message += "（顺序：" + strings.Join(plan, " > ") + "）"
+				}
+				if note != "" {
+					message += "；" + note
+				}
+				r.SystemLog("info", message)
+			}
+		}
+		params, err := maa.BuildTaskParamsWithStage(task, cfg, stageOverride)
 		if err != nil {
 			fail(fmt.Sprintf("生成任务参数失败（%s）：%v", taskDisplayName(task), err))
 			return

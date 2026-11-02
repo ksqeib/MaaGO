@@ -22,7 +22,11 @@ export function taskSummary(task: TaskConfig, language?: string): string {
       return text(language, `客户端：${label[0]}`, `Client: ${label[1]}`);
     }
     case "fight": {
-      const stage = String(options.stage ?? "");
+      const stages = Array.isArray(options.stages)
+        ? options.stages.map((item) => String(item)).filter(Boolean)
+        : [];
+      const legacy = String(options.stage ?? "").trim();
+      const stage = stages.length > 0 ? stages.join(" > ") : legacy;
       const times = Number(options.times ?? 0);
       const stageText = stage || text(language, "当前/上次", "Current/last");
       return times > 0

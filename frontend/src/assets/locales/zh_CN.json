@@ -136,6 +136,47 @@
     "shots_dir": "失败截图",
     "count": "{{count}} 条"
   },
+  "stages": {
+    "current_last": "未选择关卡（使用当前/上次）",
+    "pick": "选择关卡",
+    "edit": "修改关卡",
+    "title": "选择作战关卡",
+    "subtitle": "勾选多个关卡，右侧按优先级排序；运行时自动跳过当前未开放的关卡。",
+    "refresh": "刷新关卡数据",
+    "search_placeholder": "搜索关卡、名称或活动…",
+    "search_results": "搜索结果",
+    "selected": "已选",
+    "plan": "执行顺序",
+    "plan_empty": "还没有选择关卡。不选任何关卡时使用游戏当前/上次关卡。",
+    "plan_hint": "运行时从第 1 个开始，自动跳过未开放的关卡。",
+    "plan_hint_empty": "留空则使用当前/上次关卡。",
+    "clear": "清空",
+    "cancel": "取消",
+    "confirm": "确定",
+    "loading": "正在加载关卡数据…",
+    "load_failed": "关卡数据加载失败",
+    "empty": "没有匹配的关卡",
+    "open": "开放",
+    "closed": "未开放",
+    "unknown": "不在当前关卡表中",
+    "source": "数据来源",
+    "tab": {
+      "main": "主线",
+      "resource": "资源",
+      "event": "活动",
+      "annihilation": "剿灭",
+      "other": "其他"
+    },
+    "group": {
+      "main": "主线",
+      "resource": "资源收集",
+      "chips": "芯片",
+      "annihilation": "剿灭",
+      "other": "其他",
+      "chapter": "第 {{number}} 章",
+      "event": "活动"
+    }
+  },
   "settings": {
     "title": "设置",
     "subtitle": "连接、运行、定时、通知与外观。",

@@ -19,6 +19,7 @@ import (
 	"MaaGO/internal/notify"
 	"MaaGO/internal/runner"
 	"MaaGO/internal/scheduler"
+	"MaaGO/internal/stages"
 	"MaaGO/internal/tray"
 	"MaaGO/internal/updater"
 	MaaVersion "MaaGO/internal/version"
@@ -256,6 +257,32 @@ func (s *Service) DiagnoseConnection(address string) diagnostics.Result {
 // OpenCoreLogsDir opens the date-rotated MaaCore log directory.
 func (s *Service) OpenCoreLogsDir() error {
 	return openPath(apppath.CoreLogsDir())
+}
+
+// GetStageCatalog returns the stage picker catalog. refresh forces a download
+// of MAA's activity snapshot; otherwise a cache older than 6 hours is refreshed.
+func (s *Service) GetStageCatalog(refresh bool) (stages.Catalog, error) {
+	cfg, _ := config.Load()
+	coreDir := ""
+	if s.core != nil {
+		coreDir = s.core.Dir()
+	}
+	if coreDir == "" {
+		coreDir = maa.DefaultCoreDir()
+	}
+	cachePath := filepath.Join(apppath.CacheDir(), stages.ActivityCacheFile)
+	stale := true
+	if info, err := os.Stat(cachePath); err == nil {
+		stale = time.Since(info.ModTime()) > 6*time.Hour
+	}
+	if refresh || stale {
+		if client, err := updater.NewHTTPClient(cfg); err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = stages.FetchActivity(ctx, client, cachePath)
+			cancel()
+		}
+	}
+	return stages.Build(coreDir, cfg.Run.ClientType, cachePath, time.Now())
 }
 
 // OpenDiagnosticsDir opens the diagnostic screenshot directory.

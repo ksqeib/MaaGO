@@ -2,7 +2,7 @@ import type { LocalizedText, TaskConfig, TaskType } from "@/types/maa";
 
 export type TaskIcon = "rocket" | "swords" | "factory" | "users" | "shopping" | "gift";
 
-export type FieldType = "switch" | "text" | "number" | "select" | "multiselect";
+export type FieldType = "switch" | "text" | "number" | "select" | "multiselect" | "stage-plan";
 
 export interface FieldOption {
   value: string;
@@ -80,11 +80,14 @@ export const TASK_META: TaskMeta[] = [
     },
     fields: [
       {
-        key: "stage",
-        type: "text",
-        label: { zh: "关卡", en: "Stage" },
-        placeholder: { zh: "留空使用当前/上次关卡", en: "Leave empty for the current/last stage" },
-        defaultValue: "",
+        key: "stages",
+        type: "stage-plan",
+        label: { zh: "关卡顺序", en: "Stage order" },
+        hint: {
+          zh: "按顺序选择多个关卡；运行时会跳过当前未开放的关卡",
+          en: "Pick several stages in priority order; closed stages are skipped at runtime",
+        },
+        defaultValue: [],
       },
       {
         key: "times",
