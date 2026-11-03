@@ -348,6 +348,18 @@ Copy-Item .\core ..\core-backup-$(Get-Date -Format yyyyMMdd-HHmmss) -Recurse
 - 仪表盘/设置里的“下次运行”取所有启用时间点中最早的一个。
 - 定时只在 MaaGO 运行期间生效；应用退出后不会触发。
 
+### 性能与 GPU 加速
+
+“设置 → 性能”控制 MaaCore 的 OCR 推理设备：
+
+- **默认 CPU**：兼容性最好。
+- **GPU 加速 OCR**：通过 DirectML 在显卡上运行 OCR 推理，降低 CPU 占用；需要显卡/驱动支持 DirectML。
+- **GPU 设备**：通常填 `0`；多显卡可以填设备序号，或 `luid:十六进制适配器 ID`。
+- GPU 只影响 OCR，不改变截图、模板匹配和触控方式。
+- OCR 提供者只能在资源加载前设置，所以修改后需要重启 MaaGO。
+- 如果 GPU 不可用，MaaCore 会记录错误并自动回退 CPU；可以看 `logs\core\core-YYYY-MM-DD.log` 里的 `gpu_active` / `falling back to CPU`。
+- 启动成功时 `logs\startup.log` 会出现 `OCR GPU acceleration enabled (device 0)`。
+
 ## 8. 日志与诊断
 
 ### 核心日志

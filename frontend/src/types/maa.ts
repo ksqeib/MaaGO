@@ -87,6 +87,11 @@ export interface UpdateConfig {
   targetVersion: string;
 }
 
+export interface PerformanceConfig {
+  gpuOcr: boolean;
+  gpuDevice: string;
+}
+
 export interface LastRun {
   startedAt: string;
   finishedAt: string;
@@ -113,6 +118,7 @@ export interface AppConfig {
   notification: NotificationConfig;
   proxy: ProxyConfig;
   update: UpdateConfig;
+  performance: PerformanceConfig;
   tasks: TaskConfig[];
   lastRun: LastRun;
 }

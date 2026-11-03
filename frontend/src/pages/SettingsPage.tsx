@@ -6,6 +6,7 @@ import {
   FaClock,
   FaCloudDownloadAlt,
   FaDesktop,
+  FaMicrochip,
   FaPalette,
   FaPlayCircle,
   FaPlug,
@@ -18,16 +19,26 @@ import { cn } from "@/utils/cn";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
 import { ConnectionSettings } from "./settings/ConnectionSettings";
 import { NotificationSettings } from "./settings/NotificationSettings";
+import { PerformanceSettings } from "./settings/PerformanceSettings";
 import { RunSettings } from "./settings/RunSettings";
 import { ScheduleSettings } from "./settings/ScheduleSettings";
 import { TraySettings } from "./settings/TraySettings";
 import { UpdateSettings } from "./settings/UpdateSettings";
 
-type TabKey = "connection" | "run" | "schedule" | "notification" | "appearance" | "tray" | "update";
+type TabKey =
+  | "connection"
+  | "run"
+  | "performance"
+  | "schedule"
+  | "notification"
+  | "appearance"
+  | "tray"
+  | "update";
 
 const tabs: { key: TabKey; icon: ReactNode }[] = [
   { key: "connection", icon: <FaPlug /> },
   { key: "run", icon: <FaPlayCircle /> },
+  { key: "performance", icon: <FaMicrochip /> },
   { key: "schedule", icon: <FaClock /> },
   { key: "notification", icon: <FaBell /> },
   { key: "appearance", icon: <FaPalette /> },
@@ -44,6 +55,8 @@ export const SettingsPage = () => {
     switch (activeTab) {
       case "run":
         return <RunSettings />;
+      case "performance":
+        return <PerformanceSettings />;
       case "schedule":
         return <ScheduleSettings />;
       case "notification":

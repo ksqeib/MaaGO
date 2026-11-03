@@ -179,10 +179,11 @@
   },
   "settings": {
     "title": "设置",
-    "subtitle": "连接、运行、定时、通知与外观。",
+    "subtitle": "连接、运行、性能、定时、通知与外观。",
     "tabs": {
       "connection": "连接",
       "run": "运行",
+      "performance": "性能",
       "schedule": "定时",
       "notification": "通知",
       "appearance": "外观",
@@ -226,6 +227,19 @@
       "only_no_other": "仅在没有其他 MaaGO 运行时执行",
       "skip_on_error": "任务出错时跳过",
       "post_action_note": "完成后动作尚未接入执行层，当前只保存设置。"
+    },
+    "performance": {
+      "title": "OCR 与 GPU 加速",
+      "note": "控制 MaaCore 的 OCR 推理设备；修改后需要重启 MaaGO 生效。",
+      "gpu_ocr": "使用 GPU 加速 OCR",
+      "gpu_ocr_hint": "通过 DirectML 在显卡上运行 OCR 推理，可降低 CPU 占用；失败时会自动回退 CPU。",
+      "gpu_device": "GPU 设备",
+      "gpu_device_hint": "通常填 0（默认显卡）；多显卡可填设备序号或 luid:十六进制适配器 ID。",
+      "about_title": "说明",
+      "about_ocr": "GPU 加速只影响 OCR 推理，不改变截图、模板匹配和触控方式。",
+      "about_restart": "OCR 提供者只能在资源加载前设置，因此修改后必须重启 MaaGO。",
+      "about_fallback": "驱动/显卡不支持 DirectML 时，MaaCore 会自动回退到 CPU。",
+      "about_device": "设备号从 0 开始；不确定时保持 0。"
     },
     "schedule": {
       "enabled": "启用定时执行",

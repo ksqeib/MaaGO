@@ -18,7 +18,7 @@ import (
 )
 
 // ConfigVersion is bumped when the on-disk shape changes.
-const ConfigVersion = 8
+const ConfigVersion = 9
 
 var (
 	mu       sync.RWMutex
@@ -158,6 +158,12 @@ type UpdateConfig struct {
 	TargetVersion string `json:"targetVersion"`
 }
 
+// PerformanceConfig controls inference performance.
+type PerformanceConfig struct {
+	GPUOCR    bool   `json:"gpuOcr"`
+	GPUDevice string `json:"gpuDevice"`
+}
+
 // LastRun records the result of the most recent queue run.
 type LastRun struct {
 	StartedAt       string `json:"startedAt"`
@@ -186,6 +192,7 @@ type AppConfig struct {
 	Notification    NotificationConfig `json:"notification"`
 	Proxy           ProxyConfig        `json:"proxy"`
 	Update          UpdateConfig       `json:"update"`
+	Performance     PerformanceConfig  `json:"performance"`
 	Tasks           []TaskConfig       `json:"tasks"`
 	LastRun         LastRun            `json:"lastRun"`
 }
@@ -240,6 +247,10 @@ func Default() AppConfig {
 		Update: UpdateConfig{
 			Mirror:        "",
 			TargetVersion: "",
+		},
+		Performance: PerformanceConfig{
+			GPUOCR:    false,
+			GPUDevice: "0",
 		},
 		Tasks: defaultTasks(),
 		LastRun: LastRun{
@@ -467,6 +478,10 @@ func (c *AppConfig) Normalize() {
 	c.Proxy.URL = strings.TrimSpace(c.Proxy.URL)
 	c.Update.Mirror = strings.TrimSpace(c.Update.Mirror)
 	c.Update.TargetVersion = strings.TrimSpace(c.Update.TargetVersion)
+	c.Performance.GPUDevice = strings.TrimSpace(c.Performance.GPUDevice)
+	if c.Performance.GPUDevice == "" {
+		c.Performance.GPUDevice = "0"
+	}
 
 	seen := map[string]struct{}{}
 	tasks := make([]TaskConfig, 0, len(c.Tasks))

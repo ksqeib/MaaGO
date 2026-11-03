@@ -96,6 +96,15 @@ func TestCompatRun(t *testing.T) {
 	if err := core.SetUserDir(filepath.Join(appData, "core")); err != nil {
 		t.Fatal(err)
 	}
+	if os.Getenv("MAAGO_TEST_GPU_OCR") != "" {
+		device := os.Getenv("MAAGO_TEST_GPU_DEVICE")
+		if device == "" {
+			device = "0"
+		}
+		if ok, err := core.SetStaticOption(maa.StaticOptionGpuOCR, device); err != nil || !ok {
+			t.Fatalf("enable GPU OCR: ok=%v err=%v", ok, err)
+		}
+	}
 	coreLogs := corelog.New(filepath.Join(appData, "logs"))
 	defer coreLogs.Close()
 

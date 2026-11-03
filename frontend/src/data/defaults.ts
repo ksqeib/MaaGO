@@ -2,7 +2,7 @@ import { defaultTasks } from "@/data/tasks";
 import type { AppConfig } from "@/types/maa";
 
 export const DEFAULT_CONFIG: AppConfig = {
-  configVersion: 8,
+  configVersion: 9,
   windowWidth: 1100,
   windowHeight: 720,
   windowMaximised: false,
@@ -60,6 +60,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   update: {
     mirror: "",
     targetVersion: "",
+  },
+  performance: {
+    gpuOcr: false,
+    gpuDevice: "0",
   },
   tasks: defaultTasks(),
   lastRun: {

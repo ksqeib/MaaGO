@@ -373,6 +373,31 @@ func (c *Core) SetInstanceOption(handle Handle, key int32, value string) (bool, 
 	return byte(result) != 0, nil
 }
 
+// Static option keys from AsstTypes.h.
+const (
+	StaticOptionCpuOCR int32 = 1
+	StaticOptionGpuOCR int32 = 2
+)
+
+// SetStaticOption sets a process-wide MaaCore option. It must be called before
+// LoadResource; OCR provider switching is not supported after resources load.
+func (c *Core) SetStaticOption(key int32, value string) (bool, error) {
+	valuePtr, err := windows.BytePtrFromString(value)
+	if err != nil {
+		return false, err
+	}
+	addr, err := c.proc("AsstSetStaticOption")
+	if err != nil {
+		return false, err
+	}
+	result, _, _ := syscall.SyscallN(
+		addr,
+		uintptr(key),
+		uintptr(unsafe.Pointer(valuePtr)),
+	)
+	return byte(result) != 0, nil
+}
+
 // Connect performs the synchronous connection.
 func (c *Core) Connect(handle Handle, adbPath, address, config string) (bool, error) {
 	adbPtr, err := windows.BytePtrFromString(adbPath)

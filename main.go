@@ -137,6 +137,7 @@ func main() {
 		if err := core.SetUserDir(userDir); err != nil {
 			log.Printf("startup: MaaCore user dir: %v", err)
 		}
+		applyPerformanceOptions(core, cfg)
 		if err := core.LoadResource(); err != nil {
 			log.Printf("startup: MaaCore resource: %v", err)
 		} else {
@@ -260,4 +261,27 @@ func main() {
 		return
 	}
 	log.Printf("shutdown: clean exit after %s", time.Since(start).Round(time.Millisecond))
+}
+
+// applyPerformanceOptions selects the OCR inference provider before the
+// resource (and OCR models) are loaded. GPU OCR uses ONNX/FastDeploy DirectML.
+func applyPerformanceOptions(core *maa.Core, cfg config.AppConfig) {
+	if core == nil || !core.Available() {
+		return
+	}
+	if cfg.Performance.GPUOCR {
+		device := strings.TrimSpace(cfg.Performance.GPUDevice)
+		if device == "" {
+			device = "0"
+		}
+		if ok, err := core.SetStaticOption(maa.StaticOptionGpuOCR, device); err != nil || !ok {
+			log.Printf("startup: GPU OCR unavailable (%v); using CPU OCR", err)
+		} else {
+			log.Printf("startup: OCR GPU acceleration enabled (device %s)", device)
+		}
+		return
+	}
+	if ok, err := core.SetStaticOption(maa.StaticOptionCpuOCR, ""); err != nil || !ok {
+		log.Printf("startup: set CPU OCR: %v", err)
+	}
 }

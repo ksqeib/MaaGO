@@ -179,10 +179,11 @@
   },
   "settings": {
     "title": "Settings",
-    "subtitle": "Connection, run, schedule, notifications and appearance.",
+    "subtitle": "Connection, run, performance, schedule, notifications and appearance.",
     "tabs": {
       "connection": "Connection",
       "run": "Run",
+      "performance": "Performance",
       "schedule": "Schedule",
       "notification": "Notifications",
       "appearance": "Appearance",
@@ -226,6 +227,19 @@
       "only_no_other": "Only when no other MaaGO is running",
       "skip_on_error": "Skip on task error",
       "post_action_note": "Post-run actions are stored but not executed until the core layer is wired in."
+    },
+    "performance": {
+      "title": "OCR and GPU acceleration",
+      "note": "Controls the OCR inference device used by MaaCore. Restart MaaGO after changing it.",
+      "gpu_ocr": "Use GPU acceleration for OCR",
+      "gpu_ocr_hint": "Runs OCR inference on the GPU through DirectML to reduce CPU load. Falls back to CPU automatically.",
+      "gpu_device": "GPU device",
+      "gpu_device_hint": "Usually 0 (default adapter); for multi-GPU systems enter a device index or luid:<hex> adapter ID.",
+      "about_title": "Notes",
+      "about_ocr": "GPU acceleration only affects OCR inference, not screenshots, template matching, or touch input.",
+      "about_restart": "The OCR provider can only be set before resources load, so a restart is required.",
+      "about_fallback": "If DirectML is unavailable, MaaCore falls back to CPU automatically.",
+      "about_device": "Device indices start at 0; keep 0 if unsure."
     },
     "schedule": {
       "enabled": "Enable schedule",
