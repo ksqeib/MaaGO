@@ -708,7 +708,9 @@ func extractEntry(entry *zip.File, destination, relative string) error {
 }
 
 func copyOptionalCoreFiles(sourceCore, stagingCore string) error {
-	for _, name := range []string{"adb", "README.md"} {
+	// The SDK package does not ship the Win32 control unit; preserve it from
+	// the old core so PC-window mode keeps working across core updates.
+	for _, name := range []string{"adb", "README.md", "MaaWin32ControlUnit.dll", "MaaAdbControlUnit.dll"} {
 		source := filepath.Join(sourceCore, name)
 		if _, err := os.Stat(source); err != nil {
 			continue

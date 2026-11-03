@@ -68,10 +68,17 @@ func BuildTaskParamsWithStage(task config.TaskConfig, cfg config.AppConfig, stag
 		if clientType == "" {
 			clientType = "Official"
 		}
+		launch := optBool(options, "launchClient", true)
+		// The PC client is attached by window; MaaCore cannot launch it through
+		// the ADB package path, so leave launching to the user.
+		mode := strings.ToLower(strings.TrimSpace(cfg.Connection.Mode))
+		if mode == "win32" || mode == "rdp" {
+			launch = false
+		}
 		params = map[string]any{
 			"enable":             true,
 			"client_type":        clientType,
-			"start_game_enabled": optBool(options, "launchClient", true),
+			"start_game_enabled": launch,
 		}
 		if account := strings.TrimSpace(optString(options, "accountSwitch", "")); account != "" {
 			params["account_name"] = account

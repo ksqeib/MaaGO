@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,9 +15,11 @@ import (
 	"MaaGO/internal/config"
 	"MaaGO/internal/connection"
 	"MaaGO/internal/diagnostics"
+	"MaaGO/internal/elevation"
 	"MaaGO/internal/lifecycle"
 	"MaaGO/internal/maa"
 	"MaaGO/internal/notify"
+	"MaaGO/internal/rdp"
 	"MaaGO/internal/runner"
 	"MaaGO/internal/scheduler"
 	"MaaGO/internal/stages"
@@ -221,6 +224,33 @@ func (s *Service) TestProxy(proxyURL string) updater.ProxyTestResult {
 	return updater.TestProxy(ctx, proxyURL)
 }
 
+// PrivilegeStatus reports whether MaaGO has administrator rights. PC-window
+// mode needs elevation because the game client runs at high integrity.
+type PrivilegeStatus struct {
+	Elevated bool `json:"elevated"`
+}
+
+// GetPrivilegeStatus tells the frontend whether a UAC restart is needed.
+func (s *Service) GetPrivilegeStatus() PrivilegeStatus {
+	return PrivilegeStatus{Elevated: elevation.IsElevated()}
+}
+
+// RestartAsAdmin relaunches MaaGO through the UAC prompt. It is required for
+// Win32 window control when the game client is elevated as well.
+func (s *Service) RestartAsAdmin() error {
+	if elevation.IsElevated() {
+		return fmt.Errorf("MaaGO 已经以管理员身份运行")
+	}
+	if err := elevation.RestartAsAdmin(); err != nil {
+		return err
+	}
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		lifecycle.Quit()
+	}()
+	return nil
+}
+
 // RestartApp relaunches MaaGO so a staged update can be applied.
 func (s *Service) RestartApp() error {
 	return lifecycle.Restart()
@@ -396,7 +426,109 @@ func (s *Service) ShowMainWindow() {
 
 // QuitApp terminates the application.
 func (s *Service) QuitApp() {
+	rdp.Shutdown()
 	lifecycle.Quit()
+}
+
+// RDPPreview is one JPEG frame for the embedded preview.
+type RDPPreview struct {
+	Connected   bool   `json:"connected"`
+	Host        string `json:"host"`
+	Username    string `json:"username"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	ImageWidth  int    `json:"imageWidth"`
+	ImageHeight int    `json:"imageHeight"`
+	Image       string `json:"image"`
+	Error       string `json:"error,omitempty"`
+}
+
+func (s *Service) rdpConfig() config.RDPConfig {
+	cfg, err := config.Load()
+	if err != nil {
+		return config.RDPConfig{}
+	}
+	return cfg.Connection.RDP
+}
+
+// GetRDPPreview returns the latest remote frame as a data URL. It is polled by
+// the dashboard card and the enlarged preview dialog.
+func (s *Service) GetRDPPreview(maxWidth int) RDPPreview {
+	rc := s.rdpConfig()
+	preview := RDPPreview{
+		Host:     rc.Host,
+		Username: rc.Username,
+		Width:    rc.Width,
+		Height:   rc.Height,
+	}
+	session := rdp.Current()
+	if session == nil || !session.Alive() {
+		return preview
+	}
+	cfg := session.Config()
+	preview.Host = cfg.Host
+	preview.Username = cfg.Username
+	preview.Width = cfg.Width
+	preview.Height = cfg.Height
+	data, w, h, err := session.SnapshotJPEG(maxWidth, 70)
+	if err != nil {
+		preview.Error = err.Error()
+		return preview
+	}
+	preview.Connected = true
+	preview.ImageWidth = w
+	preview.ImageHeight = h
+	preview.Image = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(data)
+	return preview
+}
+
+// ConnectRDP opens the RDP session without running a task, so the preview and
+// diagnostics can be used on demand.
+func (s *Service) ConnectRDP() (RDPPreview, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return RDPPreview{}, err
+	}
+	rc := cfg.Connection.RDP
+	session, err := rdp.Ensure(rdp.Config{
+		Host:     rc.Host,
+		Port:     rc.Port,
+		Username: rc.Username,
+		Password: rc.Password,
+		Domain:   rc.Domain,
+		Width:    rc.Width,
+		Height:   rc.Height,
+	})
+	if err != nil {
+		return RDPPreview{Host: rc.Host, Username: rc.Username, Width: rc.Width, Height: rc.Height, Error: err.Error()}, err
+	}
+	if s.core != nil {
+		_ = rdp.InstallPrintWindowHook(filepath.Join(s.core.Dir(), "MaaWin32ControlUnit.dll"))
+	}
+	session.UnlockIfLocked(rc.Password)
+	return s.GetRDPPreview(640), nil
+}
+
+// SendRDPInput forwards user input from the in-app preview to the remote
+// desktop. It is only called while the user has enabled operation mode.
+func (s *Service) SendRDPInput(action string, x, y int, text, key string) error {
+	session := rdp.Current()
+	if session == nil || !session.Alive() {
+		return fmt.Errorf("RDP 尚未连接")
+	}
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "click":
+		session.ClickAt(x, y)
+	case "type":
+		session.TypeText(text)
+	case "key":
+		return session.PressKeyName(key)
+	case "wheel":
+		session.WheelAt(x, y, 1)
+	default:
+		return fmt.Errorf("未知 RDP 输入：%s", action)
+	}
+	return nil
 }
 
 // StartQueue starts every enabled task.

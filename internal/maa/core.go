@@ -96,6 +96,9 @@ type Core struct {
 
 	resourceOnce sync.Once
 	resourceErr  error
+
+	platformMu     sync.Mutex
+	platformLoaded map[string]bool
 }
 
 // Handle is an AsstHandle.
@@ -235,12 +238,28 @@ func DefaultCoreDir() string {
 	return "core"
 }
 
+var (
+	kernel32             = windows.NewLazySystemDLL("kernel32.dll")
+	procSetDllDirectoryW = kernel32.NewProc("SetDllDirectoryW")
+)
+
+func setDllDirectory(dir string) {
+	path, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return
+	}
+	_, _, _ = procSetDllDirectoryW.Call(uintptr(unsafe.Pointer(path)))
+}
+
 func (c *Core) load() {
 	dllPath, err := filepath.Abs(filepath.Join(c.dir, "MaaCore.dll"))
 	if err != nil {
 		c.loadErr = err
 		return
 	}
+	// MaaCore loads MaaWin32ControlUnit.dll by bare name at runtime, so the
+	// core directory must also be part of the process DLL search path.
+	setDllDirectory(c.dir)
 	dll, err := windows.LoadLibraryEx(dllPath, 0, windows.LOAD_WITH_ALTERED_SEARCH_PATH)
 	if err != nil {
 		c.loadErr = fmt.Errorf("load %s: %w", dllPath, err)
@@ -255,6 +274,7 @@ func (c *Core) load() {
 		"AsstDestroy",
 		"AsstSetInstanceOption",
 		"AsstConnect",
+		"AsstAttachWindow",
 		"AsstAppendTask",
 		"AsstStart",
 		"AsstStop",
@@ -422,6 +442,58 @@ func (c *Core) Connect(handle Handle, adbPath, address, config string) (bool, er
 		uintptr(unsafe.Pointer(adbPtr)),
 		uintptr(unsafe.Pointer(addressPtr)),
 		uintptr(unsafe.Pointer(configPtr)),
+	)
+	return byte(result) != 0, nil
+}
+
+// LoadPlatformResource overlays a platform-specific resource directory, such as
+// "platform_diff/PC". It must be called after LoadResource and is cached.
+func (c *Core) LoadPlatformResource(name string) error {
+	if !c.Available() {
+		return c.Err()
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("empty platform resource name")
+	}
+
+	c.platformMu.Lock()
+	defer c.platformMu.Unlock()
+	if c.platformLoaded[name] {
+		return nil
+	}
+
+	parent := filepath.Join(c.ResourceDir(), "platform_diff", name)
+	if info, err := os.Stat(filepath.Join(parent, "resource")); err != nil || !info.IsDir() {
+		return fmt.Errorf("platform resource %s is missing at %s", name, parent)
+	}
+	ok, err := c.callBool("AsstLoadResource", parent)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("MaaCore rejected platform resource %s", parent)
+	}
+	if c.platformLoaded == nil {
+		c.platformLoaded = map[string]bool{}
+	}
+	c.platformLoaded[name] = true
+	return nil
+}
+
+// AttachWindow binds the instance to a Win32 window instead of ADB.
+func (c *Core) AttachWindow(handle Handle, hwnd uintptr, screencap, mouse, keyboard uint64) (bool, error) {
+	addr, err := c.proc("AsstAttachWindow")
+	if err != nil {
+		return false, err
+	}
+	result, _, _ := syscall.SyscallN(
+		addr,
+		uintptr(handle),
+		hwnd,
+		uintptr(screencap),
+		uintptr(mouse),
+		uintptr(keyboard),
 	)
 	return byte(result) != 0, nil
 }

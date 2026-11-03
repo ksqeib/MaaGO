@@ -16,6 +16,7 @@ import { useState } from "react";
 import { LogConsole } from "@/components/LogConsole";
 import { PageHeader } from "@/components/PageHeader";
 import { ProgressBar } from "@/components/ProgressBar";
+import { RDPPreviewCard } from "@/components/RDPPreviewCard";
 import { DiagnosticSteps } from "@/components/DiagnosticSteps";
 import { TaskIcon } from "@/components/TaskIcon";
 import { TaskToggle } from "@/components/TaskToggle";
@@ -25,6 +26,7 @@ import { ROUTES } from "@/constants/routes";
 import { useAppStore } from "@/store/AppStore";
 import type { ConnectionCandidate, DiagnosticResult } from "@/types/maa";
 import { cn } from "@/utils/cn";
+import { gameWindowTitle } from "@/utils/client";
 import { formatCountdown, formatDateTime, formatDuration } from "@/utils/format";
 import { pickText } from "@/utils/text";
 
@@ -71,6 +73,14 @@ export const DashboardPage = () => {
 
   const running = run.status === "running" || run.status === "stopping";
   const enabledCount = config.tasks.filter((task) => task.enabled).length;
+  const pcMode = config.connection.mode === "win32";
+  const rdpMode = config.connection.mode === "rdp";
+  const remoteMode = pcMode || rdpMode;
+  const pcWindowTitle =
+    config.connection.win32?.windowTitle?.trim() || gameWindowTitle(config.run.clientType);
+  const rdpTarget = config.connection.rdp
+    ? `${config.connection.rdp.username}@${config.connection.rdp.host}:${config.connection.rdp.port}`
+    : "";
 
   const handleTest = async () => {
     const address = config.connection.address.trim();
@@ -214,19 +224,29 @@ export const DashboardPage = () => {
             </div>
 
             <label className="mt-3 block text-[11px] font-medium text-muted">
-              {t("dashboard.address")}
+              {pcMode
+                ? t("dashboard.pc_window")
+                : rdpMode
+                  ? t("dashboard.rdp_host")
+                  : t("dashboard.address")}
             </label>
-            <input
-              className="mt-1 h-9 w-full rounded-xl border border-border bg-surface-secondary/60 px-3 text-sm outline-none focus:border-brand-500/60"
-              onChange={(event) =>
-                updateConfig((previous) => ({
-                  ...previous,
-                  connection: { ...previous.connection, address: event.target.value },
-                }))
-              }
-              placeholder={t("dashboard.address_placeholder")}
-              value={config.connection.address}
-            />
+            {remoteMode ? (
+              <div className="mt-1 flex h-9 w-full items-center rounded-xl border border-border bg-surface-secondary/60 px-3 text-sm">
+                {pcMode ? pcWindowTitle : rdpTarget}
+              </div>
+            ) : (
+              <input
+                className="mt-1 h-9 w-full rounded-xl border border-border bg-surface-secondary/60 px-3 text-sm outline-none focus:border-brand-500/60"
+                onChange={(event) =>
+                  updateConfig((previous) => ({
+                    ...previous,
+                    connection: { ...previous.connection, address: event.target.value },
+                  }))
+                }
+                placeholder={t("dashboard.address_placeholder")}
+                value={config.connection.address}
+              />
+            )}
 
             <div className="mt-2 flex gap-2">
               <button
@@ -238,15 +258,17 @@ export const DashboardPage = () => {
                 <FaSyncAlt className={cn(testing && "animate-spin")} size={9} />
                 {testing ? t("settings.connection.testing") : t("dashboard.test_connection")}
               </button>
-              <button
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-surface-secondary px-3 py-1.5 text-[11px] font-medium text-muted hover:text-foreground disabled:opacity-60"
-                disabled={detecting}
-                onClick={() => void handleDetect()}
-                type="button"
-              >
-                <FaDesktop size={9} />
-                {t("dashboard.detect_emulators")}
-              </button>
+              {!remoteMode && (
+                <button
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-surface-secondary px-3 py-1.5 text-[11px] font-medium text-muted hover:text-foreground disabled:opacity-60"
+                  disabled={detecting}
+                  onClick={() => void handleDetect()}
+                  type="button"
+                >
+                  <FaDesktop size={9} />
+                  {t("dashboard.detect_emulators")}
+                </button>
+              )}
             </div>
 
             <DiagnosticSteps result={diagnosis} running={testing} />
@@ -278,6 +300,9 @@ export const DashboardPage = () => {
               <p className="mt-2 text-[10px] text-muted">{t("dashboard.no_candidates")}</p>
             )}
           </section>
+
+          {/* RDP preview */}
+          {rdpMode && <RDPPreviewCard />}
 
           {/* Schedule */}
           <section className="launcher-glass rounded-3xl p-5 lg:col-span-1">

@@ -2,7 +2,7 @@ import { defaultTasks } from "@/data/tasks";
 import type { AppConfig } from "@/types/maa";
 
 export const DEFAULT_CONFIG: AppConfig = {
-  configVersion: 9,
+  configVersion: 11,
   windowWidth: 1100,
   windowHeight: 720,
   windowMaximised: false,
@@ -21,6 +21,21 @@ export const DEFAULT_CONFIG: AppConfig = {
     touchMode: "adb",
     screenshotEnhance: false,
     clientType: "Official",
+    win32: {
+      windowTitle: "",
+      screencap: "PrintWindow",
+      mouse: "PostMessageWithWindowPos",
+      keyboard: "SendMessage",
+    },
+    rdp: {
+      host: "",
+      port: 3389,
+      username: "",
+      password: "",
+      domain: "",
+      width: 1920,
+      height: 1080,
+    },
   },
   run: {
     clientType: "Official",

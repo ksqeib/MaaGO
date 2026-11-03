@@ -16,7 +16,9 @@ import (
 	"MaaGO/internal/connection"
 	"MaaGO/internal/corelog"
 	"MaaGO/internal/maa"
+	"MaaGO/internal/rdp"
 	"MaaGO/internal/stages"
+	"MaaGO/internal/win32"
 )
 
 type coreDetails struct {
@@ -93,31 +95,91 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 		return
 	}
 
-	address := strings.TrimSpace(cfg.Connection.Address)
-	adbPath := maa.ResolveADB(r.core.Dir(), cfg.Connection.AdbPath)
-	if adbPath == "" {
-		fail("未找到 adb.exe，请将 platform-tools 放到 core\\adb 或在设置中填写 ADB 路径")
-		return
-	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.Connection.Mode))
+	pcMode := mode == "win32"
+	rdpMode := mode == "rdp"
+	remoteMode := pcMode || rdpMode
 
-	if address == "" && cfg.Connection.AutoDetect {
-		detectCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		candidates := connection.Detect(detectCtx)
-		cancel()
-		if len(candidates) > 0 {
-			address = candidates[0].Address
-			r.SystemLog("info", fmt.Sprintf("自动检测到模拟器：%s（%s）", candidates[0].Name, address))
+	address := ""
+	adbPath := ""
+	configName := ""
+	var pcWindow win32.Window
+	var rdpSession *rdp.Session
+	if remoteMode {
+		if err := r.core.LoadPlatformResource("PC"); err != nil {
+			fail(fmt.Sprintf("加载 PC 平台资源失败：%v", err))
+			return
 		}
-	}
-	if address == "" && cfg.Connection.AutoDetect {
-		if devices := maa.ADBDevices(adbPath); len(devices) > 0 {
-			address = devices[0]
-			r.SystemLog("info", fmt.Sprintf("自动检测到 ADB 设备：%s", address))
+		if pcMode {
+			window, err := win32.FindGameWindow(cfg.Run.ClientType, cfg.Connection.Win32.WindowTitle)
+			if err != nil {
+				fail(fmt.Sprintf("查找 PC 客户端窗口失败：%v", err))
+				return
+			}
+			pcWindow = window
+			r.SystemLog("info", fmt.Sprintf("PC 客户端窗口：%s（HWND 0x%X，PID %d）", window.Title, window.Handle, window.ProcessID))
+			if r.coreLog != nil {
+				r.coreLog.Meta("window", window.Title)
+				r.coreLog.Meta("hwnd", fmt.Sprintf("0x%X", window.Handle))
+			}
+		} else {
+			session, err := rdp.Ensure(rdp.Config{
+				Host:     cfg.Connection.RDP.Host,
+				Port:     cfg.Connection.RDP.Port,
+				Username: cfg.Connection.RDP.Username,
+				Password: cfg.Connection.RDP.Password,
+				Domain:   cfg.Connection.RDP.Domain,
+				Width:    cfg.Connection.RDP.Width,
+				Height:   cfg.Connection.RDP.Height,
+			})
+			if err != nil {
+				fail(fmt.Sprintf("RDP 连接失败：%v", err))
+				return
+			}
+			rdpSession = session
+			if err := rdp.InstallPrintWindowHook(filepath.Join(r.core.Dir(), "MaaWin32ControlUnit.dll")); err != nil {
+				r.SystemLog("warn", fmt.Sprintf("RDP PrintWindow 钩子安装失败：%v", err))
+			}
+			if rdpSession.UnlockIfLocked(cfg.Connection.RDP.Password) {
+				r.SystemLog("info", "已发送 RDP 解锁按键")
+			}
+			rdpSession.FocusRemote()
+			r.SystemLog("info", fmt.Sprintf("RDP 远程桌面：%s@%s:%d（%dx%d）", cfg.Connection.RDP.Username, cfg.Connection.RDP.Host, cfg.Connection.RDP.Port, cfg.Connection.RDP.Width, cfg.Connection.RDP.Height))
+			if !session.HasFrame() {
+				r.SystemLog("warn", "RDP 已连接，但尚未收到远端画面")
+			}
+			if r.coreLog != nil {
+				r.coreLog.Meta("rdp", fmt.Sprintf("%s@%s:%d", cfg.Connection.RDP.Username, cfg.Connection.RDP.Host, cfg.Connection.RDP.Port))
+				r.coreLog.Meta("rdp_window", fmt.Sprintf("0x%X", session.HWND()))
+			}
 		}
-	}
-	if address == "" {
-		fail("未设置连接地址，请先在设置中填写模拟器 ADB 地址")
-		return
+	} else {
+		address = strings.TrimSpace(cfg.Connection.Address)
+		adbPath = maa.ResolveADB(r.core.Dir(), cfg.Connection.AdbPath)
+		if adbPath == "" {
+			fail("未找到 adb.exe，请将 platform-tools 放到 core\\adb 或在设置中填写 ADB 路径")
+			return
+		}
+
+		if address == "" && cfg.Connection.AutoDetect {
+			detectCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			candidates := connection.Detect(detectCtx)
+			cancel()
+			if len(candidates) > 0 {
+				address = candidates[0].Address
+				r.SystemLog("info", fmt.Sprintf("自动检测到模拟器：%s（%s）", candidates[0].Name, address))
+			}
+		}
+		if address == "" && cfg.Connection.AutoDetect {
+			if devices := maa.ADBDevices(adbPath); len(devices) > 0 {
+				address = devices[0]
+				r.SystemLog("info", fmt.Sprintf("自动检测到 ADB 设备：%s", address))
+			}
+		}
+		if address == "" {
+			fail("未设置连接地址，请先在设置中填写模拟器 ADB 地址")
+			return
+		}
 	}
 
 	handle, err := r.core.Create()
@@ -127,36 +189,88 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 	}
 	defer r.core.Destroy(handle)
 
-	touchMode := strings.TrimSpace(cfg.Connection.TouchMode)
-	if touchMode == "" {
-		touchMode = "minitouch"
-	}
-	if cfg.Connection.Emulator == "mumu" && cfg.Connection.ScreenshotEnhance {
-		touchMode = "MumuExtras"
-	}
-	if ok, err := r.core.SetInstanceOption(handle, maa.InstanceOptionTouchMode, touchMode); err != nil || !ok {
-		r.SystemLog("warn", fmt.Sprintf("设置触控模式失败：%v", err))
-	}
 	if cfg.Run.ClientType != "" {
 		_, _ = r.core.SetInstanceOption(handle, maa.InstanceOptionClientType, cfg.Run.ClientType)
 	}
 
-	configName := maa.ConnectionConfigName(cfg.Connection.Emulator)
-	r.SystemLog("info", fmt.Sprintf("连接设备：%s（配置：%s）", address, configName))
-	r.SystemLog("info", fmt.Sprintf("ADB：%s", adbPath))
-	if r.coreLog != nil {
-		r.coreLog.Meta("address", address)
-		r.coreLog.Meta("adb", adbPath)
-	}
-	connected, err := r.core.Connect(handle, adbPath, address, configName)
-	if err != nil || !connected {
-		if err == nil {
-			err = fmt.Errorf("AsstConnect 返回失败")
+	if remoteMode {
+		controlUnit := filepath.Join(r.core.Dir(), "MaaWin32ControlUnit.dll")
+		if _, err := os.Stat(controlUnit); err != nil {
+			fail("缺少 MaaWin32ControlUnit.dll（PC 窗口控制组件），请从官方 MAA 发布包复制到 core\\")
+			return
 		}
-		fail(fmt.Sprintf("连接设备失败：%v", err))
-		return
+		var targetHWND uintptr
+		var screencap, mouse, keyboard uint64
+		var screencapLabel, mouseLabel, keyboardLabel string
+		if pcMode {
+			targetHWND = pcWindow.Handle
+			screencap, screencapLabel = win32.ParseScreencap(cfg.Connection.Win32.Screencap)
+			mouse, mouseLabel = win32.ParseMouse(cfg.Connection.Win32.Mouse)
+			keyboard, keyboardLabel = win32.ParseKeyboard(cfg.Connection.Win32.Keyboard)
+			r.SystemLog("info", fmt.Sprintf("绑定 PC 窗口：截图 %s，鼠标 %s，键盘 %s", screencapLabel, mouseLabel, keyboardLabel))
+		} else {
+			if rdpSession == nil || rdpSession.HWND() == 0 {
+				fail("RDP 预览窗口尚未创建")
+				return
+			}
+			targetHWND = rdpSession.HWND()
+			screencap, screencapLabel = win32.ScreencapPrintWindow, "PrintWindow"
+			mouse, mouseLabel = win32.MousePostMessage, "PostMessage"
+			keyboard, keyboardLabel = win32.KeyboardSendMessage, "SendMessage"
+			r.SystemLog("info", fmt.Sprintf("绑定 RDP 代理窗口：截图 %s，鼠标 %s，键盘 %s", screencapLabel, mouseLabel, keyboardLabel))
+		}
+		if r.coreLog != nil {
+			r.coreLog.Meta("screencap", screencapLabel)
+			r.coreLog.Meta("mouse", mouseLabel)
+			r.coreLog.Meta("keyboard", keyboardLabel)
+		}
+		attached, err := r.core.AttachWindow(handle, targetHWND, screencap, mouse, keyboard)
+		if err != nil || !attached {
+			if err == nil {
+				err = fmt.Errorf("AsstAttachWindow 返回失败")
+			}
+			if rdpMode {
+				fail(fmt.Sprintf("绑定 RDP 代理窗口失败：%v", err))
+			} else {
+				fail(fmt.Sprintf("绑定 PC 客户端窗口失败：%v（可尝试以管理员身份运行 MaaGO）", err))
+			}
+			return
+		}
+		if rdpMode {
+			rdpSession.EnsureVisible()
+			r.SystemLog("success", "RDP 代理窗口绑定成功")
+		} else {
+			r.SystemLog("success", "PC 窗口绑定成功")
+		}
+	} else {
+		touchMode := strings.TrimSpace(cfg.Connection.TouchMode)
+		if touchMode == "" {
+			touchMode = "minitouch"
+		}
+		if cfg.Connection.Emulator == "mumu" && cfg.Connection.ScreenshotEnhance {
+			touchMode = "MumuExtras"
+		}
+		if ok, err := r.core.SetInstanceOption(handle, maa.InstanceOptionTouchMode, touchMode); err != nil || !ok {
+			r.SystemLog("warn", fmt.Sprintf("设置触控模式失败：%v", err))
+		}
+
+		configName = maa.ConnectionConfigName(cfg.Connection.Emulator)
+		r.SystemLog("info", fmt.Sprintf("连接设备：%s（配置：%s）", address, configName))
+		r.SystemLog("info", fmt.Sprintf("ADB：%s", adbPath))
+		if r.coreLog != nil {
+			r.coreLog.Meta("address", address)
+			r.coreLog.Meta("adb", adbPath)
+		}
+		connected, err := r.core.Connect(handle, adbPath, address, configName)
+		if err != nil || !connected {
+			if err == nil {
+				err = fmt.Errorf("AsstConnect 返回失败")
+			}
+			fail(fmt.Sprintf("连接设备失败：%v", err))
+			return
+		}
+		r.SystemLog("success", "设备连接成功")
 	}
-	r.SystemLog("success", "设备连接成功")
 
 	taskByType := make(map[config.TaskType]config.TaskConfig, len(tasks))
 	for _, task := range tasks {

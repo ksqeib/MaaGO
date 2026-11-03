@@ -17,6 +17,8 @@ import (
 	"MaaGO/internal/apppath"
 	"MaaGO/internal/config"
 	"MaaGO/internal/maa"
+	"MaaGO/internal/rdp"
+	"MaaGO/internal/win32"
 )
 
 // Step keys. The frontend localises these labels.
@@ -28,6 +30,11 @@ const (
 	StepSystem     = "system"
 	StepScreenshot = "screenshot"
 	StepTouch      = "touch"
+	StepPCUnit     = "pcunit"
+	StepWindow     = "window"
+	StepRDP        = "rdp"
+	StepFrame      = "frame"
+	StepProxy      = "proxy"
 )
 
 const (
@@ -119,6 +126,14 @@ func Run(ctx context.Context, core *maa.Core, cfg config.AppConfig, address stri
 	}
 	add(StepCore, StatusOK, core.Version(), started)
 	result.System.Address = result.Address
+
+	mode := strings.ToLower(strings.TrimSpace(cfg.Connection.Mode))
+	if mode == "win32" {
+		return runPC(core, cfg, &result, add, skipRest, finish)
+	}
+	if mode == "rdp" {
+		return runRDP(core, cfg, &result, add, skipRest, finish)
+	}
 
 	started = time.Now()
 	adbPath := maa.ResolveADB(core.Dir(), cfg.Connection.AdbPath)
@@ -295,6 +310,209 @@ func Run(ctx context.Context, core *maa.Core, cfg config.AppConfig, address stri
 		return finish()
 	}
 	add(StepTouch, StatusOK, "tap (10,10) · follow-up screenshot ok", started)
+	return finish()
+}
+
+func runRDP(
+	core *maa.Core,
+	cfg config.AppConfig,
+	result *Result,
+	add func(key, status, detail string, started time.Time),
+	skipRest func(keys ...string),
+	finish func() Result,
+) Result {
+	rc := cfg.Connection.RDP
+	started := time.Now()
+	session, err := rdp.Ensure(rdp.Config{
+		Host:     rc.Host,
+		Port:     rc.Port,
+		Username: rc.Username,
+		Password: rc.Password,
+		Domain:   rc.Domain,
+		Width:    rc.Width,
+		Height:   rc.Height,
+	})
+	if err != nil {
+		add(StepRDP, StatusFail, err.Error(), started)
+		skipRest(StepFrame, StepProxy, StepConnect, StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	result.System.Address = fmt.Sprintf("%s@%s:%d", rc.Username, rc.Host, rc.Port)
+	add(StepRDP, StatusOK, fmt.Sprintf("%s@%s:%d", rc.Username, rc.Host, rc.Port), started)
+
+	started = time.Now()
+	if !session.HasFrame() {
+		add(StepFrame, StatusFail, "RDP 已连接但未收到画面；请确认远端桌面已解锁且游戏在前台", started)
+		skipRest(StepProxy, StepConnect, StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	add(StepFrame, StatusOK, fmt.Sprintf("%dx%d", rc.Width, rc.Height), started)
+	session.UnlockIfLocked(rc.Password)
+	session.FocusRemote()
+
+	started = time.Now()
+	controlUnit := filepath.Join(core.Dir(), "MaaWin32ControlUnit.dll")
+	if _, err := os.Stat(controlUnit); err != nil {
+		add(StepProxy, StatusFail, "缺少 MaaWin32ControlUnit.dll；请从官方 MAA 发布包复制到 core\\", started)
+		skipRest(StepConnect, StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	add(StepProxy, StatusOK, fmt.Sprintf("HWND 0x%X · %s", session.HWND(), controlUnit), started)
+
+	started = time.Now()
+	handle, err := core.Create()
+	if err != nil {
+		add(StepConnect, StatusFail, err.Error(), started)
+		skipRest(StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	defer core.Destroy(handle)
+	if cfg.Run.ClientType != "" {
+		_, _ = core.SetInstanceOption(handle, maa.InstanceOptionClientType, cfg.Run.ClientType)
+	}
+	if err := core.LoadPlatformResource("PC"); err != nil {
+		add(StepConnect, StatusFail, err.Error(), started)
+		skipRest(StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	screencap, screencapLabel := win32.ParseScreencap("PrintWindow")
+	mouse, mouseLabel := win32.ParseMouse("PostMessage")
+	keyboard, keyboardLabel := win32.ParseKeyboard("SendMessage")
+	if err := rdp.InstallPrintWindowHook(filepath.Join(core.Dir(), "MaaWin32ControlUnit.dll")); err != nil {
+		add(StepConnect, StatusFail, fmt.Sprintf("PrintWindow 钩子安装失败：%v", err), started)
+		skipRest(StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	attached, err := core.AttachWindow(handle, session.HWND(), screencap, mouse, keyboard)
+	if err != nil || !attached {
+		detail := "AsstAttachWindow 返回失败"
+		if err != nil {
+			detail = err.Error()
+		}
+		add(StepConnect, StatusFail, detail, started)
+		skipRest(StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	add(StepConnect, StatusOK, fmt.Sprintf("RDP 代理窗口 · 截图 %s · 鼠标 %s · 键盘 %s", screencapLabel, mouseLabel, keyboardLabel), started)
+	session.EnsureVisible()
+
+	started = time.Now()
+	add(StepSystem, StatusOK, fmt.Sprintf("%s@%s:%d · %dx%d", rc.Username, rc.Host, rc.Port, rc.Width, rc.Height), started)
+
+	started = time.Now()
+	screenshotPath, screenshotSize, err := captureScreenshot(core, handle)
+	if err != nil {
+		add(StepScreenshot, StatusFail, err.Error(), started)
+		skipRest(StepTouch)
+		return finish()
+	}
+	result.System.ScreenshotPath = screenshotPath
+	result.System.ScreenshotSize = screenshotSize
+	add(StepScreenshot, StatusOK, fmt.Sprintf("%s · %s", formatBytes(screenshotSize), screenshotPath), started)
+
+	started = time.Now()
+	if id, err := core.AsyncClick(handle, 10, 10, true); err != nil || id == 0 {
+		detail := "AsstAsyncClick failed"
+		if err != nil {
+			detail = err.Error()
+		}
+		add(StepTouch, StatusFail, detail, started)
+		return finish()
+	}
+	if _, _, err := captureScreenshot(core, handle); err != nil {
+		add(StepTouch, StatusFail, "click succeeded but the follow-up screenshot failed: "+err.Error(), started)
+		return finish()
+	}
+	add(StepTouch, StatusOK, "click (10,10) · follow-up screenshot ok", started)
+	return finish()
+}
+
+func runPC(
+	core *maa.Core,
+	cfg config.AppConfig,
+	result *Result,
+	add func(key, status, detail string, started time.Time),
+	skipRest func(keys ...string),
+	finish func() Result,
+) Result {
+	started := time.Now()
+	controlUnit := filepath.Join(core.Dir(), "MaaWin32ControlUnit.dll")
+	if _, err := os.Stat(controlUnit); err != nil {
+		add(StepPCUnit, StatusFail, "缺少 MaaWin32ControlUnit.dll；请从官方 MAA 发布包复制到 core\\", started)
+		skipRest(StepWindow, StepConnect, StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	add(StepPCUnit, StatusOK, controlUnit, started)
+
+	started = time.Now()
+	window, err := win32.FindGameWindow(cfg.Run.ClientType, cfg.Connection.Win32.WindowTitle)
+	if err != nil {
+		add(StepWindow, StatusFail, err.Error(), started)
+		skipRest(StepConnect, StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	result.System.Address = fmt.Sprintf("%s (HWND 0x%X)", window.Title, window.Handle)
+	add(StepWindow, StatusOK, fmt.Sprintf("%s · HWND 0x%X · PID %d", window.Title, window.Handle, window.ProcessID), started)
+
+	started = time.Now()
+	handle, err := core.Create()
+	if err != nil {
+		add(StepConnect, StatusFail, err.Error(), started)
+		skipRest(StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	defer core.Destroy(handle)
+	if cfg.Run.ClientType != "" {
+		_, _ = core.SetInstanceOption(handle, maa.InstanceOptionClientType, cfg.Run.ClientType)
+	}
+	if err := core.LoadPlatformResource("PC"); err != nil {
+		add(StepConnect, StatusFail, err.Error(), started)
+		skipRest(StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	screencap, screencapLabel := win32.ParseScreencap(cfg.Connection.Win32.Screencap)
+	mouse, mouseLabel := win32.ParseMouse(cfg.Connection.Win32.Mouse)
+	keyboard, keyboardLabel := win32.ParseKeyboard(cfg.Connection.Win32.Keyboard)
+	attached, err := core.AttachWindow(handle, window.Handle, screencap, mouse, keyboard)
+	if err != nil || !attached {
+		detail := "AsstAttachWindow 返回失败；可尝试以管理员身份运行 MaaGO"
+		if err != nil {
+			detail = err.Error()
+		}
+		add(StepConnect, StatusFail, detail, started)
+		skipRest(StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	add(StepConnect, StatusOK, fmt.Sprintf("截图 %s · 鼠标 %s · 键盘 %s", screencapLabel, mouseLabel, keyboardLabel), started)
+
+	started = time.Now()
+	add(StepSystem, StatusOK, fmt.Sprintf("%s · HWND 0x%X · PID %d", window.Title, window.Handle, window.ProcessID), started)
+
+	started = time.Now()
+	screenshotPath, screenshotSize, err := captureScreenshot(core, handle)
+	if err != nil {
+		add(StepScreenshot, StatusFail, err.Error(), started)
+		skipRest(StepTouch)
+		return finish()
+	}
+	result.System.ScreenshotPath = screenshotPath
+	result.System.ScreenshotSize = screenshotSize
+	add(StepScreenshot, StatusOK, fmt.Sprintf("%s · %s", formatBytes(screenshotSize), screenshotPath), started)
+
+	started = time.Now()
+	if id, err := core.AsyncClick(handle, 10, 10, true); err != nil || id == 0 {
+		detail := "AsstAsyncClick failed"
+		if err != nil {
+			detail = err.Error()
+		}
+		add(StepTouch, StatusFail, detail, started)
+		return finish()
+	}
+	if _, _, err := captureScreenshot(core, handle); err != nil {
+		add(StepTouch, StatusFail, "click succeeded but the follow-up screenshot failed: "+err.Error(), started)
+		return finish()
+	}
+	add(StepTouch, StatusOK, "click (10,10) · follow-up screenshot ok", started)
 	return finish()
 }
 

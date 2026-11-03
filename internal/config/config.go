@@ -18,7 +18,7 @@ import (
 )
 
 // ConfigVersion is bumped when the on-disk shape changes.
-const ConfigVersion = 9
+const ConfigVersion = 11
 
 var (
 	mu       sync.RWMutex
@@ -89,15 +89,37 @@ type TaskConfig struct {
 }
 
 // ConnectionConfig describes how MaaGO reaches the emulator or PC client.
+type Win32Config struct {
+	WindowTitle string `json:"windowTitle"`
+	Screencap   string `json:"screencap"`
+	Mouse       string `json:"mouse"`
+	Keyboard    string `json:"keyboard"`
+}
+
+// RDPConfig describes a remote Windows machine that runs the PC client. MaaGO
+// keeps an RDP session open locally and exposes its frames through a proxy
+// window, so MaaCore can keep using its Win32 controller.
+type RDPConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Domain   string `json:"domain"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+}
+
 type ConnectionConfig struct {
-	Mode              string `json:"mode"` // adb | win32
-	Address           string `json:"address"`
-	AdbPath           string `json:"adbPath"`
-	AutoDetect        bool   `json:"autoDetect"`
-	Emulator          string `json:"emulator"`  // auto | mumu | ld | bluestacks | nox | memu | custom
-	TouchMode         string `json:"touchMode"` // minitouch | maatouch | adb
-	ScreenshotEnhance bool   `json:"screenshotEnhance"`
-	ClientType        string `json:"clientType"`
+	Mode              string      `json:"mode"` // adb | win32 | rdp
+	Address           string      `json:"address"`
+	AdbPath           string      `json:"adbPath"`
+	AutoDetect        bool        `json:"autoDetect"`
+	Emulator          string      `json:"emulator"`  // auto | mumu | ld | bluestacks | nox | memu | custom
+	TouchMode         string      `json:"touchMode"` // minitouch | maatouch | adb
+	ScreenshotEnhance bool        `json:"screenshotEnhance"`
+	ClientType        string      `json:"clientType"`
+	Win32             Win32Config `json:"win32"`
+	RDP               RDPConfig   `json:"rdp"`
 }
 
 // RunConfig groups options that apply to the whole queue.
@@ -216,6 +238,17 @@ func Default() AppConfig {
 			Emulator:   "auto",
 			TouchMode:  "adb",
 			ClientType: "Official",
+			Win32: Win32Config{
+				WindowTitle: "",
+				Screencap:   "PrintWindow",
+				Mouse:       "PostMessageWithWindowPos",
+				Keyboard:    "SendMessage",
+			},
+			RDP: RDPConfig{
+				Port:   3389,
+				Width:  1920,
+				Height: 1080,
+			},
 		},
 		Run: RunConfig{
 			ClientType:   "Official",
@@ -441,6 +474,28 @@ func (c *AppConfig) Normalize() {
 	}
 	if c.Connection.ClientType == "" {
 		c.Connection.ClientType = "Official"
+	}
+	c.Connection.Win32.WindowTitle = strings.TrimSpace(c.Connection.Win32.WindowTitle)
+	if c.Connection.Win32.Screencap == "" {
+		c.Connection.Win32.Screencap = "PrintWindow"
+	}
+	if c.Connection.Win32.Mouse == "" {
+		c.Connection.Win32.Mouse = "PostMessageWithWindowPos"
+	}
+	if c.Connection.Win32.Keyboard == "" {
+		c.Connection.Win32.Keyboard = "SendMessage"
+	}
+	c.Connection.RDP.Host = strings.TrimSpace(c.Connection.RDP.Host)
+	c.Connection.RDP.Username = strings.TrimSpace(c.Connection.RDP.Username)
+	c.Connection.RDP.Domain = strings.TrimSpace(c.Connection.RDP.Domain)
+	if c.Connection.RDP.Port <= 0 || c.Connection.RDP.Port > 65535 {
+		c.Connection.RDP.Port = 3389
+	}
+	if c.Connection.RDP.Width <= 0 || c.Connection.RDP.Width > 3840 {
+		c.Connection.RDP.Width = 1280
+	}
+	if c.Connection.RDP.Height <= 0 || c.Connection.RDP.Height > 2160 {
+		c.Connection.RDP.Height = 720
 	}
 
 	if c.Run.ClientType == "" {

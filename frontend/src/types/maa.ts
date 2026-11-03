@@ -32,6 +32,23 @@ export interface TaskConfig {
   options: Record<string, unknown>;
 }
 
+export interface Win32Config {
+  windowTitle: string;
+  screencap: string;
+  mouse: string;
+  keyboard: string;
+}
+
+export interface RDPConfig {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  domain: string;
+  width: number;
+  height: number;
+}
+
 export interface ConnectionConfig {
   mode: string;
   address: string;
@@ -41,6 +58,8 @@ export interface ConnectionConfig {
   touchMode: string;
   screenshotEnhance: boolean;
   clientType: string;
+  win32: Win32Config;
+  rdp: RDPConfig;
 }
 
 export interface RunConfig {
