@@ -26,6 +26,15 @@ func TestReloadMigratesLegacyConfigAndSeries(t *testing.T) {
 		Theme:         ThemeSystem,
 		Language:      "zh_CN",
 		Layout:        LayoutSidebar,
+		Schedule: ScheduleConfig{
+			Enabled:       true,
+			Time:          "04:00",
+			Weekdays:      []int{1, 2},
+			Force:         true,
+			NotifyBefore:  true,
+			NotifyMinutes: 10,
+			LastTriggered: "2026-11-01",
+		},
 		Tasks: []TaskConfig{{
 			ID:      "task-fight",
 			Type:    TaskFight,
@@ -53,6 +62,13 @@ func TestReloadMigratesLegacyConfigAndSeries(t *testing.T) {
 	}
 	if loaded.Tasks[0].Options["series"] != "0" {
 		t.Fatalf("series = %v, want auto (0)", loaded.Tasks[0].Options["series"])
+	}
+	if len(loaded.Schedule.Entries) != 1 {
+		t.Fatalf("schedule entries = %d, want 1", len(loaded.Schedule.Entries))
+	}
+	entry := loaded.Schedule.Entries[0]
+	if entry.Time != "04:00" || !entry.Force || !entry.Enabled || entry.LastTriggered != "2026-11-01" {
+		t.Fatalf("unexpected migrated entry: %+v", entry)
 	}
 
 	newPath := filepath.Join(configDir, "config.json")

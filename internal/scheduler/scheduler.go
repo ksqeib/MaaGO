@@ -1,4 +1,4 @@
-// Package scheduler triggers the task queue at a configured time.
+// Package scheduler triggers the task queue at one or more configured times.
 package scheduler
 
 import (
@@ -14,21 +14,32 @@ import (
 // EmitFunc publishes a Wails event.
 type EmitFunc func(name string, payload any)
 
-// Status is the frontend-facing schedule snapshot.
-type Status struct {
-	Enabled         bool   `json:"enabled"`
+// EntryStatus is the frontend-facing snapshot of one trigger time.
+type EntryStatus struct {
+	ID              string `json:"id"`
 	Time            string `json:"time"`
 	Weekdays        []int  `json:"weekdays"`
+	Enabled         bool   `json:"enabled"`
 	Force           bool   `json:"force"`
-	NotifyBefore    bool   `json:"notifyBefore"`
-	NotifyMinutes   int    `json:"notifyMinutes"`
 	NextRun         string `json:"nextRun"`
 	NextRunUnix     int64  `json:"nextRunUnix"`
 	SecondsUntilRun int64  `json:"secondsUntilRun"`
 	LastTriggered   string `json:"lastTriggered"`
 }
 
-// Scheduler owns the daily timer loop.
+// Status is the frontend-facing schedule snapshot.
+type Status struct {
+	Enabled         bool          `json:"enabled"`
+	NotifyBefore    bool          `json:"notifyBefore"`
+	NotifyMinutes   int           `json:"notifyMinutes"`
+	Entries         []EntryStatus `json:"entries"`
+	NextRun         string        `json:"nextRun"`
+	NextRunUnix     int64         `json:"nextRunUnix"`
+	SecondsUntilRun int64         `json:"secondsUntilRun"`
+	LastTriggered   string        `json:"lastTriggered"`
+}
+
+// Scheduler owns the timer loop.
 type Scheduler struct {
 	mu     sync.RWMutex
 	cfg    config.ScheduleConfig
@@ -54,23 +65,45 @@ func (s *Scheduler) Update(cfg config.ScheduleConfig) {
 func (s *Scheduler) Status() Status {
 	s.mu.RLock()
 	cfg := s.cfg
+	entries := append([]config.ScheduleEntry(nil), cfg.Entries...)
 	s.mu.RUnlock()
 
 	now := time.Now()
-	next, ok := nextOccurrence(cfg, now)
 	status := Status{
 		Enabled:       cfg.Enabled,
-		Time:          cfg.Time,
-		Weekdays:      append([]int(nil), cfg.Weekdays...),
-		Force:         cfg.Force,
 		NotifyBefore:  cfg.NotifyBefore,
 		NotifyMinutes: cfg.NotifyMinutes,
-		LastTriggered: cfg.LastTriggered,
+		Entries:       make([]EntryStatus, 0, len(entries)),
 	}
-	if ok {
-		status.NextRun = next.Format("2006-01-02 15:04")
-		status.NextRunUnix = next.Unix()
-		status.SecondsUntilRun = int64(time.Until(next).Seconds())
+	var earliest time.Time
+	lastTriggered := ""
+	for _, entry := range entries {
+		info := EntryStatus{
+			ID:            entry.ID,
+			Time:          entry.Time,
+			Weekdays:      append([]int(nil), entry.Weekdays...),
+			Enabled:       entry.Enabled,
+			Force:         entry.Force,
+			LastTriggered: entry.LastTriggered,
+		}
+		if entry.LastTriggered > lastTriggered {
+			lastTriggered = entry.LastTriggered
+		}
+		if next, ok := nextOccurrence(entry, now); ok {
+			info.NextRun = next.Format("2006-01-02 15:04")
+			info.NextRunUnix = next.Unix()
+			info.SecondsUntilRun = int64(time.Until(next).Seconds())
+			if earliest.IsZero() || next.Before(earliest) {
+				earliest = next
+			}
+		}
+		status.Entries = append(status.Entries, info)
+	}
+	status.LastTriggered = lastTriggered
+	if !earliest.IsZero() {
+		status.NextRun = earliest.Format("2006-01-02 15:04")
+		status.NextRunUnix = earliest.Unix()
+		status.SecondsUntilRun = int64(time.Until(earliest).Seconds())
 	}
 	return status
 }
@@ -107,43 +140,78 @@ func (s *Scheduler) check() {
 	}
 
 	now := time.Now()
-	hour, minute, ok := parseClock(cfg.Time)
-	if !ok {
-		return
-	}
-
 	date := now.Format("2006-01-02")
-	target := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+	entries := append([]config.ScheduleEntry(nil), cfg.Entries...)
+	changed := false
+	firedMinutes := map[string]bool{}
+	notifiedMinutes := map[string]bool{}
 
-	if cfg.NotifyBefore && cfg.NotifyMinutes > 0 && cfg.LastNotified != date {
-		notifyAt := target.Add(-time.Duration(cfg.NotifyMinutes) * time.Minute)
-		if sameMinute(now, notifyAt) && weekdayEnabled(cfg.Weekdays, now) {
-			s.mu.Lock()
-			s.cfg.LastNotified = date
-			s.mu.Unlock()
-			_ = config.Update(func(c *config.AppConfig) { c.Schedule.LastNotified = date })
-			if s.notify != nil {
-				appCfg, err := config.Load()
-				if err == nil && appCfg.Notification.SystemEnabled && appCfg.Notification.OnSchedule {
-					s.notify("MaaGO · 定时任务", fmt.Sprintf("任务将在 %d 分钟后开始", cfg.NotifyMinutes))
+	for index := range entries {
+		entry := &entries[index]
+		if !entry.Enabled {
+			continue
+		}
+		hour, minute, ok := parseClock(entry.Time)
+		if !ok {
+			continue
+		}
+		target := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+		if !weekdayEnabled(entry.Weekdays, now) {
+			continue
+		}
+
+		if cfg.NotifyBefore && cfg.NotifyMinutes > 0 {
+			if next, ok := nextOccurrence(*entry, now); ok {
+				notifyAt := next.Add(-time.Duration(cfg.NotifyMinutes) * time.Minute)
+				notifyDate := next.Format("2006-01-02")
+				if entry.LastNotified != notifyDate && sameMinute(now, notifyAt) {
+					entry.LastNotified = notifyDate
+					changed = true
+					key := notifyDate + "|" + entry.Time
+					if !notifiedMinutes[key] {
+						notifiedMinutes[key] = true
+						s.sendNotification(entry.Time, cfg.NotifyMinutes)
+					}
 				}
 			}
-			s.publish()
 		}
+
+		if entry.LastTriggered == date || !sameMinute(now, target) {
+			continue
+		}
+		entry.LastTriggered = date
+		changed = true
+		if firedMinutes[entry.Time] {
+			continue
+		}
+		firedMinutes[entry.Time] = true
+		s.trigger(entry)
 	}
 
-	if cfg.LastTriggered == date || !sameMinute(now, target) || !weekdayEnabled(cfg.Weekdays, now) {
+	if changed {
+		s.mu.Lock()
+		s.cfg.Entries = entries
+		s.mu.Unlock()
+		persistMarks(entries)
+		s.publish()
+	}
+}
+
+func (s *Scheduler) sendNotification(clock string, minutes int) {
+	if s.notify == nil {
 		return
 	}
+	appCfg, err := config.Load()
+	if err != nil || !appCfg.Notification.SystemEnabled || !appCfg.Notification.OnSchedule {
+		return
+	}
+	s.notify("MaaGO · 定时任务", fmt.Sprintf("任务将在 %d 分钟后开始（%s）", minutes, clock))
+}
 
-	s.mu.Lock()
-	s.cfg.LastTriggered = date
-	s.mu.Unlock()
-	_ = config.Update(func(c *config.AppConfig) { c.Schedule.LastTriggered = date })
-
-	s.runner.SystemLog("info", fmt.Sprintf("定时任务触发（%s）", cfg.Time))
+func (s *Scheduler) trigger(entry *config.ScheduleEntry) {
+	s.runner.SystemLog("info", fmt.Sprintf("定时任务触发（%s）", entry.Time))
 	if s.runner.Busy() {
-		if cfg.Force {
+		if entry.Force {
 			s.runner.SystemLog("warn", "当前有任务运行，强制停止并重新开始")
 			_ = s.runner.Stop()
 			go func() {
@@ -155,11 +223,30 @@ func (s *Scheduler) check() {
 		} else {
 			s.runner.SystemLog("warn", "当前有任务运行，跳过本次定时启动")
 		}
-	} else if err := s.runner.Start(); err != nil {
+		return
+	}
+	if err := s.runner.Start(); err != nil {
 		s.runner.SystemLog("error", fmt.Sprintf("定时任务启动失败：%v", err))
 	}
+}
 
-	s.publish()
+func persistMarks(entries []config.ScheduleEntry) {
+	byID := make(map[string]config.ScheduleEntry, len(entries))
+	for _, entry := range entries {
+		if entry.ID != "" {
+			byID[entry.ID] = entry
+		}
+	}
+	_ = config.Update(func(c *config.AppConfig) {
+		for i := range c.Schedule.Entries {
+			updated, ok := byID[c.Schedule.Entries[i].ID]
+			if !ok {
+				continue
+			}
+			c.Schedule.Entries[i].LastTriggered = updated.LastTriggered
+			c.Schedule.Entries[i].LastNotified = updated.LastNotified
+		}
+	})
 }
 
 func parseClock(value string) (hour, minute int, ok bool) {
@@ -191,11 +278,11 @@ func weekdayEnabled(days []int, now time.Time) bool {
 	return false
 }
 
-func nextOccurrence(cfg config.ScheduleConfig, now time.Time) (time.Time, bool) {
-	if !cfg.Enabled {
+func nextOccurrence(entry config.ScheduleEntry, now time.Time) (time.Time, bool) {
+	if !entry.Enabled {
 		return time.Time{}, false
 	}
-	hour, minute, ok := parseClock(cfg.Time)
+	hour, minute, ok := parseClock(entry.Time)
 	if !ok {
 		return time.Time{}, false
 	}
@@ -206,7 +293,7 @@ func nextOccurrence(cfg config.ScheduleConfig, now time.Time) (time.Time, bool) 
 		if !candidate.After(now) {
 			continue
 		}
-		if weekdayEnabled(cfg.Weekdays, candidate) {
+		if weekdayEnabled(entry.Weekdays, candidate) {
 			return candidate, true
 		}
 	}

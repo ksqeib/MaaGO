@@ -97,8 +97,18 @@ func (s *Service) SaveConfig(cfg config.AppConfig) error {
 		cfg.WindowHeight = current.WindowHeight
 		cfg.WindowMaximised = current.WindowMaximised
 		cfg.LastRun = current.LastRun
-		cfg.Schedule.LastTriggered = current.Schedule.LastTriggered
-		cfg.Schedule.LastNotified = current.Schedule.LastNotified
+		// Scheduler marks are written by the backend; keep them when the
+		// frontend saves a stale snapshot of the schedule entries.
+		marksByID := make(map[string]config.ScheduleEntry, len(current.Schedule.Entries))
+		for _, entry := range current.Schedule.Entries {
+			marksByID[entry.ID] = entry
+		}
+		for i := range cfg.Schedule.Entries {
+			if existing, ok := marksByID[cfg.Schedule.Entries[i].ID]; ok {
+				cfg.Schedule.Entries[i].LastTriggered = existing.LastTriggered
+				cfg.Schedule.Entries[i].LastNotified = existing.LastNotified
+			}
+		}
 		*current = cfg
 		saved = *current
 	})

@@ -2,7 +2,7 @@ import { defaultTasks } from "@/data/tasks";
 import type { AppConfig } from "@/types/maa";
 
 export const DEFAULT_CONFIG: AppConfig = {
-  configVersion: 7,
+  configVersion: 8,
   windowWidth: 1100,
   windowHeight: 720,
   windowMaximised: false,
@@ -33,13 +33,19 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
   schedule: {
     enabled: false,
-    time: "04:00",
-    weekdays: [1, 2, 3, 4, 5, 6, 7],
-    force: false,
     notifyBefore: true,
     notifyMinutes: 10,
-    lastTriggered: "",
-    lastNotified: "",
+    entries: [
+      {
+        id: "schedule-1",
+        time: "04:00",
+        weekdays: [1, 2, 3, 4, 5, 6, 7],
+        enabled: true,
+        force: false,
+        lastTriggered: "",
+        lastNotified: "",
+      },
+    ],
   },
   notification: {
     systemEnabled: true,

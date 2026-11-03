@@ -238,7 +238,13 @@
       "next_run": "下次运行",
       "last_triggered": "上次触发",
       "none": "暂无计划",
-      "note": "定时任务只在应用运行时生效；关闭应用后不会触发。"
+      "note": "定时任务只在应用运行时生效；关闭应用后不会触发。",
+      "entries_title": "执行时间点",
+      "entries_note": "可以添加多个时间点；每个时间点单独选择星期和是否强制重启。",
+      "add_time": "添加时间点",
+      "no_entries": "还没有时间点，点击右上角“添加时间点”。",
+      "entry_enabled": "启用",
+      "remove": "删除"
     },
     "notification": {
       "system": "启用系统通知",

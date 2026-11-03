@@ -238,7 +238,13 @@
       "next_run": "Next run",
       "last_triggered": "Last triggered",
       "none": "Not scheduled",
-      "note": "The schedule only runs while MaaGO is open."
+      "note": "The schedule only runs while MaaGO is open.",
+      "entries_title": "Trigger times",
+      "entries_note": "Add multiple times per day; each entry has its own weekdays and force-restart setting.",
+      "add_time": "Add time",
+      "no_entries": "No trigger times yet. Use “Add time” in the top right.",
+      "entry_enabled": "Enabled",
+      "remove": "Remove"
     },
     "notification": {
       "system": "Enable system notifications",

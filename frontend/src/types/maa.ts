@@ -53,15 +53,21 @@ export interface RunConfig {
   postActionSkipOnError: boolean;
 }
 
-export interface ScheduleConfig {
-  enabled: boolean;
+export interface ScheduleEntry {
+  id: string;
   time: string;
   weekdays: number[];
+  enabled: boolean;
   force: boolean;
+  lastTriggered?: string;
+  lastNotified?: string;
+}
+
+export interface ScheduleConfig {
+  enabled: boolean;
   notifyBefore: boolean;
   notifyMinutes: number;
-  lastTriggered: string;
-  lastNotified: string;
+  entries: ScheduleEntry[];
 }
 
 export interface NotificationConfig {
@@ -140,13 +146,23 @@ export interface LogEntry {
   message: string;
 }
 
-export interface ScheduleStatus {
-  enabled: boolean;
+export interface ScheduleEntryStatus {
+  id: string;
   time: string;
   weekdays: number[];
+  enabled: boolean;
   force: boolean;
+  nextRun: string;
+  nextRunUnix: number;
+  secondsUntilRun: number;
+  lastTriggered: string;
+}
+
+export interface ScheduleStatus {
+  enabled: boolean;
   notifyBefore: boolean;
   notifyMinutes: number;
+  entries: ScheduleEntryStatus[];
   nextRun: string;
   nextRunUnix: number;
   secondsUntilRun: number;

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -17,7 +18,7 @@ import (
 )
 
 // ConfigVersion is bumped when the on-disk shape changes.
-const ConfigVersion = 7
+const ConfigVersion = 8
 
 var (
 	mu       sync.RWMutex
@@ -111,15 +112,30 @@ type RunConfig struct {
 }
 
 // ScheduleConfig controls the daily scheduled run.
-type ScheduleConfig struct {
-	Enabled       bool   `json:"enabled"`
-	Time          string `json:"time"`
+// ScheduleEntry is one daily trigger time.
+type ScheduleEntry struct {
+	ID            string `json:"id"`
+	Time          string `json:"time"`     // HH:mm
 	Weekdays      []int  `json:"weekdays"` // 1=Monday ... 7=Sunday
+	Enabled       bool   `json:"enabled"`
 	Force         bool   `json:"force"`
-	NotifyBefore  bool   `json:"notifyBefore"`
-	NotifyMinutes int    `json:"notifyMinutes"`
-	LastTriggered string `json:"lastTriggered"` // yyyy-mm-dd
-	LastNotified  string `json:"lastNotified"`  // yyyy-mm-dd
+	LastTriggered string `json:"lastTriggered,omitempty"` // yyyy-mm-dd
+	LastNotified  string `json:"lastNotified,omitempty"`  // yyyy-mm-dd
+}
+
+type ScheduleConfig struct {
+	Enabled       bool            `json:"enabled"`
+	NotifyBefore  bool            `json:"notifyBefore"`
+	NotifyMinutes int             `json:"notifyMinutes"`
+	Entries       []ScheduleEntry `json:"entries"`
+
+	// Deprecated v7 single-schedule fields. They are migrated into Entries and
+	// cleared on the next save.
+	Time          string `json:"time,omitempty"`
+	Weekdays      []int  `json:"weekdays,omitempty"`
+	Force         bool   `json:"force,omitempty"`
+	LastTriggered string `json:"lastTriggered,omitempty"`
+	LastNotified  string `json:"lastNotified,omitempty"`
 }
 
 // NotificationConfig controls system notifications.
@@ -202,11 +218,14 @@ func Default() AppConfig {
 		},
 		Schedule: ScheduleConfig{
 			Enabled:       false,
-			Time:          "04:00",
-			Weekdays:      []int{1, 2, 3, 4, 5, 6, 7},
-			Force:         false,
 			NotifyBefore:  true,
 			NotifyMinutes: 10,
+			Entries: []ScheduleEntry{{
+				ID:       "schedule-1",
+				Time:     "04:00",
+				Weekdays: []int{1, 2, 3, 4, 5, 6, 7},
+				Enabled:  true,
+			}},
 		},
 		Notification: NotificationConfig{
 			SystemEnabled: true,
@@ -423,15 +442,28 @@ func (c *AppConfig) Normalize() {
 		c.Run.RunDurationMinutes = 0
 	}
 
-	if c.Schedule.Time == "" {
-		c.Schedule.Time = "04:00"
-	}
-	if len(c.Schedule.Weekdays) == 0 {
-		c.Schedule.Weekdays = []int{1, 2, 3, 4, 5, 6, 7}
-	}
 	if c.Schedule.NotifyMinutes < 0 {
 		c.Schedule.NotifyMinutes = 10
 	}
+	seenIDs := map[string]bool{}
+	for i := range c.Schedule.Entries {
+		entry := &c.Schedule.Entries[i]
+		if len(entry.Weekdays) == 0 {
+			entry.Weekdays = []int{1, 2, 3, 4, 5, 6, 7}
+		}
+		if strings.TrimSpace(entry.ID) == "" || seenIDs[entry.ID] {
+			base := fmt.Sprintf("schedule-%d", i+1)
+			id := base
+			for suffix := 2; seenIDs[id]; suffix++ {
+				id = fmt.Sprintf("%s-%d", base, suffix)
+			}
+			entry.ID = id
+		}
+		seenIDs[entry.ID] = true
+	}
+	sort.SliceStable(c.Schedule.Entries, func(i, j int) bool {
+		return c.Schedule.Entries[i].Time < c.Schedule.Entries[j].Time
+	})
 	c.Proxy.URL = strings.TrimSpace(c.Proxy.URL)
 	c.Update.Mirror = strings.TrimSpace(c.Update.Mirror)
 	c.Update.TargetVersion = strings.TrimSpace(c.Update.TargetVersion)
@@ -479,9 +511,6 @@ func (c *AppConfig) migrate() {
 	if !c.Notification.SystemEnabled && !c.Notification.OnComplete &&
 		!c.Notification.OnError && !c.Notification.OnSchedule {
 		c.Notification = defaults.Notification
-	}
-	if c.Schedule.Time == "" {
-		c.Schedule = defaults.Schedule
 	}
 	if c.Connection.Mode == "" {
 		c.Connection = defaults.Connection
@@ -566,6 +595,27 @@ func (c *AppConfig) migrate() {
 					task.Options["series"] = "0"
 				}
 			}
+		}
+	}
+	if c.ConfigVersion < 8 {
+		old := c.Schedule
+		entries := old.Entries
+		if len(entries) == 0 && strings.TrimSpace(old.Time) != "" {
+			entries = []ScheduleEntry{{
+				ID:            "schedule-1",
+				Time:          old.Time,
+				Weekdays:      append([]int(nil), old.Weekdays...),
+				Enabled:       true,
+				Force:         old.Force,
+				LastTriggered: old.LastTriggered,
+				LastNotified:  old.LastNotified,
+			}}
+		}
+		c.Schedule = ScheduleConfig{
+			Enabled:       old.Enabled,
+			NotifyBefore:  old.NotifyBefore,
+			NotifyMinutes: old.NotifyMinutes,
+			Entries:       entries,
 		}
 	}
 	c.MinimizeToTray = defaults.MinimizeToTray
