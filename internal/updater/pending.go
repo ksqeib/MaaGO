@@ -100,6 +100,64 @@ func ApplyPending(coreDir string) (string, error) {
 		_ = os.Remove(pendingPath(updatesDir))
 		return "core " + pending.Version + " installed", nil
 
+	case "runtime":
+		if _, err := os.Stat(filepath.Join(pending.Staging, ".maago-runtime.json")); err != nil {
+			return "", fmt.Errorf("staged runtime is invalid: %w", err)
+		}
+		if err := copyPath(pending.Staging, coreDir); err != nil {
+			return "", fmt.Errorf("install runtime dependencies: %w", err)
+		}
+		_ = os.RemoveAll(filepath.Dir(pending.Staging))
+		_ = os.Remove(pendingPath(updatesDir))
+		return "runtime dependencies " + pending.Version + " installed", nil
+
+	case "resource-base":
+		if _, err := os.Stat(filepath.Join(pending.Staging, "version.json")); err != nil {
+			return "", fmt.Errorf("staged base resource is invalid: %w", err)
+		}
+		target := filepath.Join(filepath.Dir(coreDir), "resource")
+		backup := target + ".backup"
+		_ = os.RemoveAll(backup)
+		hadTarget := false
+		if _, err := os.Stat(target); err == nil {
+			hadTarget = true
+			if err := os.Rename(target, backup); err != nil {
+				return "", fmt.Errorf("move old resource to backup: %w", err)
+			}
+		}
+		if err := os.Rename(pending.Staging, target); err != nil {
+			if hadTarget {
+				_ = os.Rename(backup, target)
+			}
+			return "", fmt.Errorf("install base resource: %w", err)
+		}
+		_ = os.RemoveAll(backup)
+		if pending.Version != "" {
+			_ = os.WriteFile(filepath.Join(target, ".maago-base-version"), []byte(pending.Version), 0o644)
+		}
+		_ = os.Remove(filepath.Join(target, ".maago-overlay-version"))
+		_ = os.RemoveAll(filepath.Dir(pending.Staging))
+		_ = os.Remove(pendingPath(updatesDir))
+		return "base resource " + pending.Version + " installed", nil
+
+	case "resource-overlay":
+		if _, err := os.Stat(filepath.Join(pending.Staging, "version.json")); err != nil {
+			return "", fmt.Errorf("staged resource overlay is invalid: %w", err)
+		}
+		target := filepath.Join(filepath.Dir(coreDir), "resource")
+		if err := os.MkdirAll(target, 0o755); err != nil {
+			return "", fmt.Errorf("create resource directory: %w", err)
+		}
+		if err := copyPath(pending.Staging, target); err != nil {
+			return "", fmt.Errorf("apply resource overlay: %w", err)
+		}
+		if pending.Version != "" {
+			_ = os.WriteFile(filepath.Join(target, ".maago-overlay-version"), []byte(pending.Version), 0o644)
+		}
+		_ = os.RemoveAll(filepath.Dir(pending.Staging))
+		_ = os.Remove(pendingPath(updatesDir))
+		return "resource overlay " + pending.Version + " installed", nil
+
 	case "resource":
 		if _, err := os.Stat(filepath.Join(pending.Staging, "version.json")); err != nil {
 			return "", fmt.Errorf("staged resource is invalid: %w", err)

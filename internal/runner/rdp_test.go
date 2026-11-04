@@ -67,6 +67,23 @@ func TestRealRDPRun(t *testing.T) {
 				},
 			}
 		}
+		if strings.EqualFold(os.Getenv("MAAGO_TEST_RDP_TASK"), "recruit") {
+			task = config.TaskConfig{
+				ID:      "task-real-rdp-recruit",
+				Type:    config.TaskRecruit,
+				Enabled: true,
+				Options: map[string]any{
+					"maxTimes":     2,
+					"expedited":    false,
+					"confirm3":     true,
+					"confirm4":     true,
+					"confirm5":     true,
+					"autoRefresh":  true,
+					"strategy":     "default",
+					"preserveTags": "",
+				},
+			}
+		}
 		c.Tasks = []config.TaskConfig{task}
 	}); err != nil {
 		t.Fatal(err)

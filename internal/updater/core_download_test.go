@@ -22,10 +22,26 @@ func TestDownloadCoreStages(t *testing.T) {
 		}
 	}
 	core := filepath.Join(root, "core")
+	if err := os.MkdirAll(core, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The SDK archive only contains MaaCore/MaaUtils; runtime DLLs from the old
+	// core must be carried over so the staged core stays loadable.
+	if err := os.WriteFile(filepath.Join(core, "opencv_world4_maa.dll"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(core, "MaaWin32ControlUnit.dll"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	service := New(core, nil)
+	service.skipRuntime = true
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
-	err := service.DownloadCore(ctx, "0.1.1")
+	version := os.Getenv("MAAGO_TEST_CORE_VERSION")
+	if version == "" {
+		version = "0.1.4"
+	}
+	err := service.DownloadCore(ctx, version)
 	status := service.Status()
 	t.Logf("status=%+v err=%v", status, err)
 	if err != nil {
@@ -37,5 +53,10 @@ func TestDownloadCoreStages(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(pending.Staging, "MaaCore.dll")); err != nil {
 		t.Fatalf("staged core is incomplete: %v", err)
+	}
+	for _, name := range []string{"deps.json", "opencv_world4_maa.dll", "MaaWin32ControlUnit.dll"} {
+		if _, err := os.Stat(filepath.Join(pending.Staging, name)); err != nil {
+			t.Fatalf("staged core is missing %s: %v", name, err)
+		}
 	}
 }

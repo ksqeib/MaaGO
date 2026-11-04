@@ -17,10 +17,12 @@ import type {
   AppInfo,
   ConnectionCandidate,
   CoreStatus,
+  CoreRuntimeStatus,
   DiagnosticResult,
   LogEntry,
   ProxyTestResult,
   ReleaseInfo,
+  ResourceVersions,
   RunState,
   ScheduleStatus,
   TaskState,
@@ -41,6 +43,8 @@ interface AppStoreValue {
   core: CoreStatus | null;
   appInfo: AppInfo | null;
   updateStatus: UpdateStatus | null;
+  resourceVersions: ResourceVersions | null;
+  runtimeStatus: CoreRuntimeStatus | null;
   error: string;
   clearError: () => void;
   startQueue: () => Promise<void>;
@@ -58,7 +62,13 @@ interface AppStoreValue {
   openDiagnosticsDir: () => void;
   checkCoreUpdate: () => Promise<ReleaseInfo | null>;
   startCoreUpdate: (version: string) => Promise<void>;
-  startResourceUpdate: () => Promise<void>;
+  checkBaseResourceUpdate: () => Promise<ReleaseInfo | null>;
+  startBaseResourceUpdate: () => Promise<void>;
+  checkResourceOverlayUpdate: () => Promise<ReleaseInfo | null>;
+  startResourceOverlayUpdate: () => Promise<void>;
+  refreshResourceVersions: () => Promise<void>;
+  refreshCoreRuntime: () => Promise<void>;
+  repairCoreRuntime: () => Promise<void>;
   testProxy: (url: string) => Promise<ProxyTestResult>;
   restartApp: () => Promise<void>;
   openUpdatesDir: () => void;
@@ -95,6 +105,8 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
   const [core, setCore] = useState<CoreStatus | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [resourceVersions, setResourceVersions] = useState<ResourceVersions | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<CoreRuntimeStatus | null>(null);
   const [error, setError] = useState("");
 
   const saveReady = useRef(false);
@@ -104,7 +116,7 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     let disposed = false;
 
     const load = async () => {
-      const [loadedConfig, state, initialLogs, scheduleStatus, coreStatus, info, update] =
+      const [loadedConfig, state, initialLogs, scheduleStatus, coreStatus, info, update, versions, runtime] =
         await Promise.all([
           withTimeout(api.GetConfig() as unknown as Promise<AppConfig>, DEFAULT_CONFIG),
           withTimeout(api.GetRunState() as unknown as Promise<RunState>, DEFAULT_RUN_STATE as unknown as RunState),
@@ -113,6 +125,8 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
           withTimeout(api.GetCoreStatus() as unknown as Promise<CoreStatus>, null as unknown as CoreStatus),
           withTimeout(api.GetAppInfo() as unknown as Promise<AppInfo>, null as unknown as AppInfo),
           withTimeout(api.GetUpdateStatus() as unknown as Promise<UpdateStatus>, null as unknown as UpdateStatus),
+          withTimeout(api.GetResourceVersions() as unknown as Promise<ResourceVersions>, null as unknown as ResourceVersions),
+          withTimeout(api.GetCoreRuntimeStatus() as unknown as Promise<CoreRuntimeStatus>, null as unknown as CoreRuntimeStatus),
         ]);
       if (disposed) return;
 
@@ -133,6 +147,8 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
       setCore(coreStatus ?? null);
       setAppInfo(info ?? null);
       setUpdateStatus(update ?? null);
+      setResourceVersions(versions ?? null);
+      setRuntimeStatus(runtime ?? null);
       setReady(true);
     };
 
@@ -411,9 +427,67 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     [config, guard, saveNow],
   );
 
-  const startResourceUpdate = useCallback(async () => {
+  const checkBaseResourceUpdate = useCallback(async () => {
     await saveNow(config);
-    await guard(() => api.StartResourceUpdate(), "启动资源更新失败");
+    const info = await withTimeout(
+      api.CheckBaseResourceUpdate() as unknown as Promise<ReleaseInfo>,
+      null as unknown as ReleaseInfo,
+      35000,
+    );
+    if (!info) {
+      setError("无法检查资源底包，请检查代理或网络");
+    } else {
+      setError("");
+    }
+    return info ?? null;
+  }, [config, saveNow]);
+
+  const startBaseResourceUpdate = useCallback(async () => {
+    await saveNow(config);
+    await guard(() => api.StartBaseResourceUpdate(), "启动资源底包更新失败");
+  }, [config, guard, saveNow]);
+
+  const checkResourceOverlayUpdate = useCallback(async () => {
+    await saveNow(config);
+    const info = await withTimeout(
+      api.CheckResourceOverlayUpdate() as unknown as Promise<ReleaseInfo>,
+      null as unknown as ReleaseInfo,
+      35000,
+    );
+    if (!info) {
+      setError("无法检查资源覆盖，请检查代理或网络");
+    } else {
+      setError("");
+    }
+    return info ?? null;
+  }, [config, saveNow]);
+
+  const startResourceOverlayUpdate = useCallback(async () => {
+    await saveNow(config);
+    await guard(() => api.StartResourceOverlayUpdate(), "启动资源覆盖更新失败");
+  }, [config, guard, saveNow]);
+
+  const refreshResourceVersions = useCallback(async () => {
+    const versions = await withTimeout(
+      api.GetResourceVersions() as unknown as Promise<ResourceVersions>,
+      null as unknown as ResourceVersions,
+      10000,
+    );
+    if (versions) setResourceVersions(versions);
+  }, []);
+
+  const refreshCoreRuntime = useCallback(async () => {
+    const status = await withTimeout(
+      api.GetCoreRuntimeStatus() as unknown as Promise<CoreRuntimeStatus>,
+      null as unknown as CoreRuntimeStatus,
+      15000,
+    );
+    if (status) setRuntimeStatus(status);
+  }, []);
+
+  const repairCoreRuntime = useCallback(async () => {
+    await saveNow(config);
+    await guard(() => api.RepairCoreRuntime(), "启动前置库修复失败");
   }, [config, guard, saveNow]);
 
   const testProxy = useCallback(async (proxyURL: string) => {
@@ -444,6 +518,8 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     core,
     appInfo,
     updateStatus,
+    resourceVersions,
+    runtimeStatus,
     error,
     clearError: () => setError(""),
     startQueue,
@@ -461,7 +537,13 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     openDiagnosticsDir,
     checkCoreUpdate,
     startCoreUpdate,
-    startResourceUpdate,
+    checkBaseResourceUpdate,
+    startBaseResourceUpdate,
+    checkResourceOverlayUpdate,
+    startResourceOverlayUpdate,
+    refreshResourceVersions,
+    refreshCoreRuntime,
+    repairCoreRuntime,
     testProxy,
     restartApp,
     openUpdatesDir,

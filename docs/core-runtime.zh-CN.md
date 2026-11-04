@@ -134,25 +134,26 @@ MaaGO 会把 `asst.log` 的新增内容镜像到：
 
 ## 6. 版本匹配
 
-- `MaaCore.dll` 和同目录 DLL 必须来自同一个 SDK Release，整体替换。
+- `MaaCore.dll`、`MaaUtils.dll` 来自同一个 SDK Release；第三方 DLL 由 `deps.json` 描述，MaaGO 会校验并从内置运行库包补齐。
 - 资源是独立分发的；更新 core 不会修改 `resource/`。
-- 只更新 `MaaResource` 动态资源时，基础 `resource/` 必须已经存在。
-- 如果连接诊断提示资源加载失败，用“更新资源”补装基础资源，或检查 `resource/version.json`。
+- 资源底包会整体替换 `resource/`；资源覆盖只合并动态文件，必须建立在已有底包之上。
+- 如果连接诊断提示资源加载失败，先用“资源底包更新”恢复官方 `resource/`，或检查 `resource/version.json`。
+- 如果“前置运行库”显示需修复，点“下载前置库”，重启后生效。
 - MaaCore 版本可在“设置 → 连接 → 核心状态”或 `logs/startup.log` 查看；SDK 的 `DEBUG_VERSION` 会由 `core/.maago-core-version` 中的发布标签替代显示。
 - 游戏客户端比 MaaCore 新时，主界面模板可能对不上；应更新基础 `resource/` 到包含该界面适配的版本（2026-11 国服界面需要带 `Task-90` 的新资源），不要手工拷贝旧模板。
 
 ## 7. 安装/更新命令
 
-应用内：设置 → 更新，可启用代理、检查版本、下载核心、更新资源，重启后自动安装。
+应用内：设置 → 更新，可启用代理、检查版本、下载核心、资源底包和资源覆盖，重启后自动安装。
 
 命令行：
 
 ```powershell
 # 从本地 SDK 包复制 bin/ 下的 DLL
-.\scripts\install-core.ps1 -Source "D:\tool\MaaCore-sdk" -AdbSource "D:\tool\platform-tools" -Version "v0.1.1"
+.\scripts\install-core.ps1 -Source "D:\tool\MaaCore-sdk" -AdbSource "D:\tool\platform-tools" -Version "v0.1.4"
 
 # 从 GitHub 下载指定 SDK 版本
-.\scripts\update-core.ps1 -Version 0.1.1
+.\scripts\update-core.ps1 -Version 0.1.4
 
 # 更新动态资源（或首次安装基础资源）
 .\scripts\update-resource.ps1

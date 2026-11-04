@@ -17,6 +17,7 @@ import (
 	"unsafe"
 
 	"MaaGO/internal/apppath"
+	"MaaGO/internal/pcres"
 
 	"golang.org/x/sys/windows"
 )
@@ -455,6 +456,9 @@ func (c *Core) LoadPlatformResource(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("empty platform resource name")
+	}
+	if strings.EqualFold(name, "PC") {
+		_ = pcres.Ensure(c.ResourceDir())
 	}
 
 	c.platformMu.Lock()

@@ -29,9 +29,28 @@ if (-not $dlls) {
     throw "No runtime DLLs were found next to MaaCore.dll."
 }
 
-Get-ChildItem $Destination -File -Filter "*.dll" -ErrorAction SilentlyContinue | Remove-Item -Force
+# The SDK package only contains MaaCore/MaaUtils. Do not delete existing DLLs:
+# the destination keeps its OpenCV/ONNX/DirectML/FastDeploy runtimes and
+# MaaWin32ControlUnit.dll across core updates.
 foreach ($dll in $dlls) {
     Copy-Item $dll.FullName $Destination -Force
+}
+$deps = Get-ChildItem $Source -Recurse -File -Filter "deps.json" | Select-Object -First 1
+if ($deps) {
+    Copy-Item $deps.FullName $Destination -Force
+    $depsData = Get-Content $deps.FullName -Raw | ConvertFrom-Json
+    $missing = @()
+    if ($depsData.runtimeFiles) {
+        foreach ($property in $depsData.runtimeFiles.PSObject.Properties) {
+            if (-not (Test-Path (Join-Path $Destination $property.Name))) {
+                $missing += $property.Name
+            }
+        }
+    }
+    if ($missing.Count -gt 0) {
+        Write-Warning "Missing runtime DLLs: $($missing -join ', ')"
+        Write-Warning "Open MaaGO -> Settings -> Update -> Download runtime, or copy them from a full MAA release."
+    }
 }
 if ($Version) {
     Set-Content -Path (Join-Path $Destination ".maago-core-version") -Value $Version -NoNewline -Encoding ascii

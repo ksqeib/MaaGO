@@ -202,6 +202,25 @@ export interface CoreStatus {
   version?: string;
 }
 
+export interface CoreRuntimeFileStatus {
+  name: string;
+  dependency: string;
+  required: string;
+  installed: boolean;
+  match: boolean;
+}
+
+export interface CoreRuntimeStatus {
+  available: boolean;
+  verified: boolean;
+  ok: boolean;
+  canRepair: boolean;
+  message: string;
+  files: CoreRuntimeFileStatus[];
+  missing: string[];
+  mismatched: string[];
+}
+
 export interface AppInfo {
   name: string;
   version: string;
@@ -260,6 +279,7 @@ export interface ReleaseInfo {
 
 export interface UpdateStatus {
   stage: "idle" | "checking" | "downloading" | "extracting" | "ready" | "error" | string;
+  target: string;
   message: string;
   progress: number;
   downloaded: number;
@@ -267,6 +287,12 @@ export interface UpdateStatus {
   version: string;
   needsRestart: boolean;
   error: string;
+}
+
+export interface ResourceVersions {
+  base: string;
+  overlay: string;
+  updated: string;
 }
 
 export interface ProxyTestResult {

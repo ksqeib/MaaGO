@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bodgit/sevenzip"
+
 	"MaaGO/internal/config"
 )
 
@@ -33,7 +35,7 @@ const (
 )
 
 var (
-	coreAssetPattern = regexp.MustCompile(`^MaaCore-sdk-windows-x64-.*\.zip$`)
+	coreAssetPattern = regexp.MustCompile(`^MaaCore-sdk-windows-x64-.*\.(zip|7z)$`)
 	maaAssetPattern  = regexp.MustCompile(`^MAA-v.+-win-x64\.zip$`)
 )
 
@@ -58,6 +60,7 @@ type ProxyTestResult struct {
 // Status is the update progress snapshot emitted to the frontend.
 type Status struct {
 	Stage        string `json:"stage"`
+	Target       string `json:"target"`
 	Message      string `json:"message"`
 	Progress     int    `json:"progress"`
 	Downloaded   int64  `json:"downloaded"`
@@ -78,12 +81,14 @@ const (
 
 // Service owns update checks and downloads.
 type Service struct {
-	mu      sync.RWMutex
-	status  Status
-	coreDir string
-	updates string
-	emit    func(name string, payload any)
-	busy    bool
+	mu          sync.RWMutex
+	status      Status
+	target      string
+	coreDir     string
+	updates     string
+	emit        func(name string, payload any)
+	busy        bool
+	skipRuntime bool
 }
 
 // New creates an updater service for coreDir.
@@ -91,8 +96,13 @@ func New(coreDir string, emit func(name string, payload any)) *Service {
 	updates := filepath.Join(filepath.Dir(coreDir), ".maago-updates")
 	status := Status{Stage: StageIdle, Message: "idle"}
 	if pending, ok, err := readPending(updates); err == nil && ok {
+		target := pending.Kind
+		if target == "resource" {
+			target = "resource-overlay"
+		}
 		status = Status{
 			Stage:        StageReady,
+			Target:       target,
 			Message:      "pending " + pending.Kind + " update",
 			Version:      pending.Version,
 			NeedsRestart: true,
@@ -143,11 +153,21 @@ func (s *Service) Busy() bool {
 
 func (s *Service) setStatus(status Status) {
 	s.mu.Lock()
+	if status.Target == "" {
+		status.Target = s.target
+	}
 	s.status = status
 	s.mu.Unlock()
 	if s.emit != nil {
 		s.emit("maago:update", status)
 	}
+}
+
+func (s *Service) setTarget(target string) {
+	s.mu.Lock()
+	s.target = target
+	s.status.Target = target
+	s.mu.Unlock()
 }
 
 func (s *Service) fail(err error) {
@@ -160,6 +180,7 @@ func (s *Service) fail(err error) {
 
 // Check fetches the latest release metadata.
 func (s *Service) Check(ctx context.Context) (ReleaseInfo, error) {
+	s.setTarget("core")
 	cfg, err := config.Load()
 	if err != nil {
 		return ReleaseInfo{}, err
@@ -181,7 +202,7 @@ func (s *Service) Check(ctx context.Context) (ReleaseInfo, error) {
 
 // DownloadCore downloads a release and stages it for the next start.
 func (s *Service) DownloadCore(ctx context.Context, version string) error {
-	if err := s.begin(); err != nil {
+	if err := s.begin("core"); err != nil {
 		return err
 	}
 	defer s.end()
@@ -207,7 +228,7 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 		s.setStatus(Status{Stage: StageChecking, Message: "resolving latest release"})
 		release, err = fetchLatest(ctx, client)
 	} else {
-		release = releaseForVersion(version)
+		release, err = fetchCoreRelease(ctx, client, version)
 	}
 	if err != nil {
 		s.fail(err)
@@ -222,7 +243,7 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 		s.fail(err)
 		return err
 	}
-	zipPath := filepath.Join(stageRoot, "core.zip")
+	zipPath := filepath.Join(stageRoot, "core"+filepath.Ext(release.AssetName))
 
 	s.setStatus(Status{
 		Stage:    StageDownload,
@@ -245,6 +266,15 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 	if err := copyOptionalCoreFiles(s.coreDir, stagingCore); err != nil {
 		s.fail(err)
 		return err
+	}
+	if deps, ok, err := readCoreDependencies(stagingCore); err != nil {
+		s.fail(err)
+		return err
+	} else if ok {
+		if err := s.ensureRuntime(ctx, client, stageRoot, stagingCore, deps, cfg.Update.Mirror); err != nil {
+			s.fail(err)
+			return err
+		}
 	}
 	if err := validateCore(stagingCore); err != nil {
 		s.fail(err)
@@ -273,7 +303,7 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 // MaaResource hot-update files when the base resource already exists. The
 // staged resource is applied next to the core directory on restart.
 func (s *Service) DownloadResource(ctx context.Context) error {
-	if err := s.begin(); err != nil {
+	if err := s.begin("resource"); err != nil {
 		return err
 	}
 	defer s.end()
@@ -357,7 +387,234 @@ func (s *Service) DownloadResource(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) begin() error {
+// ResourceVersions reports the installed base/overlay markers and the resource
+// data date. It is used by the separate update sections.
+type ResourceVersions struct {
+	Base    string `json:"base"`
+	Overlay string `json:"overlay"`
+	Updated string `json:"updated"`
+}
+
+func (s *Service) Versions() ResourceVersions {
+	resourceDir := filepath.Join(filepath.Dir(s.coreDir), "resource")
+	read := func(name string) string {
+		data, err := os.ReadFile(filepath.Join(resourceDir, name))
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(data))
+	}
+	var meta struct {
+		LastUpdated string `json:"last_updated"`
+	}
+	if data, err := os.ReadFile(filepath.Join(resourceDir, "version.json")); err == nil {
+		_ = json.Unmarshal(data, &meta)
+	}
+	return ResourceVersions{
+		Base:    read(".maago-base-version"),
+		Overlay: read(".maago-overlay-version"),
+		Updated: meta.LastUpdated,
+	}
+}
+
+// CheckBase fetches the latest official MAA release, whose resource zip is the
+// base resource (including platform_diff/PC).
+func (s *Service) CheckBase(ctx context.Context) (ReleaseInfo, error) {
+	s.setTarget("resource-base")
+	cfg, err := config.Load()
+	if err != nil {
+		return ReleaseInfo{}, err
+	}
+	s.setStatus(Status{Stage: StageChecking, Message: "checking official base resource"})
+	client, err := httpClient(cfg, "")
+	if err != nil {
+		s.fail(err)
+		return ReleaseInfo{}, err
+	}
+	release, err := fetchOfficialLatest(ctx, client)
+	if err != nil {
+		s.fail(err)
+		return ReleaseInfo{}, err
+	}
+	s.setStatus(Status{Stage: StageIdle, Message: "latest base " + release.Tag, Version: release.Tag})
+	return release, nil
+}
+
+// CheckOverlay fetches the latest commit of MaaResource, which is applied as an
+// overlay on top of the base resource.
+func (s *Service) CheckOverlay(ctx context.Context) (ReleaseInfo, error) {
+	s.setTarget("resource-overlay")
+	cfg, err := config.Load()
+	if err != nil {
+		return ReleaseInfo{}, err
+	}
+	s.setStatus(Status{Stage: StageChecking, Message: "checking MaaResource overlay"})
+	client, err := httpClient(cfg, "")
+	if err != nil {
+		s.fail(err)
+		return ReleaseInfo{}, err
+	}
+	info, err := fetchOverlayCommit(ctx, client)
+	if err != nil {
+		s.fail(err)
+		return ReleaseInfo{}, err
+	}
+	s.setStatus(Status{Stage: StageIdle, Message: "latest overlay " + info.Tag, Version: info.Tag})
+	return info, nil
+}
+
+// DownloadBase stages the official MAA release resource as the base resource.
+func (s *Service) DownloadBase(ctx context.Context) error {
+	if err := s.begin("resource-base"); err != nil {
+		return err
+	}
+	defer s.end()
+
+	cfg, err := config.Load()
+	if err != nil {
+		s.fail(err)
+		return err
+	}
+	client, err := httpClient(cfg, "")
+	if err != nil {
+		s.fail(err)
+		return err
+	}
+	release, err := fetchOfficialLatest(ctx, client)
+	if err != nil {
+		s.fail(err)
+		return err
+	}
+	stageRoot := filepath.Join(s.updates, "base-resource-"+time.Now().Format("20060102-150405"))
+	cleanStaging(s.updates)
+	_ = os.RemoveAll(stageRoot)
+	if err := os.MkdirAll(stageRoot, 0o755); err != nil {
+		s.fail(err)
+		return err
+	}
+	zipPath := filepath.Join(stageRoot, "resource.zip")
+	s.setStatus(Status{Stage: StageDownload, Target: "resource-base", Message: "downloading base resource " + release.Tag, Version: release.Tag, Total: release.Size})
+	if err := s.download(ctx, client, withMirror(release.AssetURL, cfg.Update.Mirror), zipPath, release.Tag); err != nil {
+		s.fail(err)
+		return err
+	}
+	s.setStatus(Status{Stage: StageExtracting, Target: "resource-base", Message: "extracting base resource", Progress: 0})
+	stagingResource := filepath.Join(stageRoot, "resource")
+	if err := extractResource(zipPath, stagingResource, s.setStatus); err != nil {
+		s.fail(err)
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(stagingResource, "version.json")); err != nil {
+		err = errors.New("downloaded base resource has no version.json")
+		s.fail(err)
+		return err
+	}
+	if err := writePending(s.updates, pendingUpdate{Kind: "resource-base", Staging: stagingResource, Version: release.Tag}); err != nil {
+		s.fail(err)
+		return err
+	}
+	s.setStatus(Status{Stage: StageReady, Target: "resource-base", Message: "base resource " + release.Tag + " is ready; restart to apply", Version: release.Tag, Progress: 100, NeedsRestart: true})
+	return nil
+}
+
+// DownloadOverlay stages the MaaResource main branch as an overlay.
+func (s *Service) DownloadOverlay(ctx context.Context) error {
+	if err := s.begin("resource-overlay"); err != nil {
+		return err
+	}
+	defer s.end()
+
+	cfg, err := config.Load()
+	if err != nil {
+		s.fail(err)
+		return err
+	}
+	client, err := httpClient(cfg, "")
+	if err != nil {
+		s.fail(err)
+		return err
+	}
+	info, err := fetchOverlayCommit(ctx, client)
+	version := "main"
+	if err == nil {
+		version = info.Tag
+	}
+	stageRoot := filepath.Join(s.updates, "overlay-resource-"+time.Now().Format("20060102-150405"))
+	cleanStaging(s.updates)
+	_ = os.RemoveAll(stageRoot)
+	if err := os.MkdirAll(stageRoot, 0o755); err != nil {
+		s.fail(err)
+		return err
+	}
+	zipPath := filepath.Join(stageRoot, "resource.zip")
+	s.setStatus(Status{Stage: StageDownload, Target: "resource-overlay", Message: "downloading MaaResource overlay " + version, Version: version})
+	if err := s.download(ctx, client, withMirror(resourceURL, cfg.Update.Mirror), zipPath, version); err != nil {
+		s.fail(err)
+		return err
+	}
+	s.setStatus(Status{Stage: StageExtracting, Target: "resource-overlay", Message: "extracting resource overlay", Progress: 0})
+	stagingResource := filepath.Join(stageRoot, "resource")
+	if err := extractResource(zipPath, stagingResource, s.setStatus); err != nil {
+		s.fail(err)
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(stagingResource, "version.json")); err != nil {
+		err = errors.New("downloaded resource overlay has no version.json")
+		s.fail(err)
+		return err
+	}
+	if err := writePending(s.updates, pendingUpdate{Kind: "resource-overlay", Staging: stagingResource, Version: version}); err != nil {
+		s.fail(err)
+		return err
+	}
+	s.setStatus(Status{Stage: StageReady, Target: "resource-overlay", Message: "resource overlay " + version + " is ready; restart to apply", Version: version, Progress: 100, NeedsRestart: true})
+	return nil
+}
+
+func fetchOverlayCommit(ctx context.Context, client *http.Client) (ReleaseInfo, error) {
+	const api = "https://api.github.com/repos/MaaAssistantArknights/MaaResource/commits/main"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, api, nil)
+	if err != nil {
+		return ReleaseInfo{}, err
+	}
+	request.Header.Set("User-Agent", userAgent)
+	request.Header.Set("Accept", "application/vnd.github+json")
+	response, err := client.Do(request)
+	if err != nil {
+		return ReleaseInfo{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return ReleaseInfo{}, fmt.Errorf("check overlay failed: HTTP %d", response.StatusCode)
+	}
+	var payload struct {
+		SHA    string `json:"sha"`
+		Commit struct {
+			Committer struct {
+				Date string `json:"date"`
+			} `json:"committer"`
+		} `json:"commit"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload); err != nil {
+		return ReleaseInfo{}, err
+	}
+	tag := payload.SHA
+	if len(tag) > 7 {
+		tag = tag[:7]
+	}
+	if tag == "" {
+		tag = "main"
+	}
+	return ReleaseInfo{
+		Tag:       tag,
+		Version:   tag,
+		AssetName: "MaaResource-main.zip",
+		AssetURL:  resourceURL,
+		Published: payload.Commit.Committer.Date,
+	}, nil
+}
+
+func (s *Service) begin(target string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.busy {
@@ -367,6 +624,8 @@ func (s *Service) begin() error {
 		return errors.New("an update is already staged; restart MaaGO to apply it first")
 	}
 	s.busy = true
+	s.target = target
+	s.status.Target = target
 	return nil
 }
 
@@ -451,6 +710,12 @@ func fetchLatest(ctx context.Context, client *http.Client) (ReleaseInfo, error) 
 	return fetchRelease(ctx, client, coreAPI, coreAssetPattern)
 }
 
+func fetchCoreRelease(ctx context.Context, client *http.Client, version string) (ReleaseInfo, error) {
+	tag := "v" + strings.TrimPrefix(strings.TrimSpace(version), "v")
+	api := "https://api.github.com/repos/" + coreRepo + "/releases/tags/" + tag
+	return fetchRelease(ctx, client, api, coreAssetPattern)
+}
+
 func fetchOfficialLatest(ctx context.Context, client *http.Client) (ReleaseInfo, error) {
 	return fetchRelease(ctx, client, maaReleaseAPI, maaAssetPattern)
 }
@@ -483,6 +748,9 @@ func fetchRelease(ctx context.Context, client *http.Client, api string, pattern 
 		return ReleaseInfo{}, err
 	}
 	for _, asset := range payload.Assets {
+		if strings.Contains(strings.ToLower(asset.Name), "symbols") {
+			continue
+		}
 		if pattern.MatchString(asset.Name) {
 			return ReleaseInfo{
 				Tag:       payload.TagName,
@@ -581,6 +849,9 @@ func TestProxy(ctx context.Context, proxyURL string) ProxyTestResult {
 }
 
 func extractCore(zipPath, staging, version string, status func(Status)) error {
+	if strings.HasSuffix(strings.ToLower(zipPath), ".7z") {
+		return extractCore7z(zipPath, staging, version, status)
+	}
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return err
@@ -610,12 +881,16 @@ func extractCore(zipPath, staging, version string, status func(Status)) error {
 		}
 		name := strings.ReplaceAll(entry.Name, "\\", "/")
 		relative := strings.TrimPrefix(name, root)
-		if root != "" && relative == name {
+		metadata := filepath.Base(name) == "deps.json"
+		if metadata {
+			relative = "deps.json"
+		} else if root != "" && relative == name {
 			continue
 		}
 		// The SDK puts runtime DLLs in bin/ next to MaaCore.dll. Keep that flat
 		// directory only; headers, PDBs and docs are not needed at runtime.
-		if strings.Contains(relative, "/") || !strings.HasSuffix(strings.ToLower(relative), ".dll") {
+		keep := strings.HasSuffix(strings.ToLower(relative), ".dll") || metadata
+		if strings.Contains(relative, "/") || !keep {
 			continue
 		}
 		if err := extractEntry(entry, staging, relative); err != nil {
@@ -633,6 +908,86 @@ func extractCore(zipPath, staging, version string, status func(Status)) error {
 	}
 	if copied == 0 {
 		return errors.New("no runtime DLLs were found next to MaaCore.dll")
+	}
+	return nil
+}
+
+func extractCore7z(archivePath, staging, version string, status func(Status)) error {
+	reader, err := sevenzip.OpenReader(archivePath)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	root := ""
+	found := false
+	for _, entry := range reader.File {
+		name := strings.ReplaceAll(entry.Name, "\\", "/")
+		if name == "MaaCore.dll" || strings.HasSuffix(name, "/MaaCore.dll") {
+			root = strings.TrimSuffix(name, "MaaCore.dll")
+			found = true
+			break
+		}
+	}
+	if !found {
+		return errors.New("MaaCore.dll was not found in the 7z archive")
+	}
+
+	_ = os.RemoveAll(staging)
+	total := len(reader.File)
+	copied := 0
+	for index, entry := range reader.File {
+		if entry.FileInfo().IsDir() {
+			continue
+		}
+		name := strings.ReplaceAll(entry.Name, "\\", "/")
+		relative := strings.TrimPrefix(name, root)
+		metadata := filepath.Base(name) == "deps.json"
+		if metadata {
+			relative = "deps.json"
+		} else if root != "" && relative == name {
+			continue
+		}
+		keep := strings.HasSuffix(strings.ToLower(relative), ".dll") || metadata
+		if strings.Contains(relative, "/") || !keep {
+			continue
+		}
+		source, err := entry.Open()
+		if err != nil {
+			return err
+		}
+		destination := filepath.Join(staging, relative)
+		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+			source.Close()
+			return err
+		}
+		file, err := os.Create(destination)
+		if err != nil {
+			source.Close()
+			return err
+		}
+		if _, err := io.Copy(file, source); err != nil {
+			file.Close()
+			source.Close()
+			return err
+		}
+		if err := file.Close(); err != nil {
+			source.Close()
+			return err
+		}
+		source.Close()
+		copied++
+		if index%10 == 0 {
+			status(Status{
+				Stage:    StageExtracting,
+				Message:  "extracting core",
+				Progress: index * 100 / max(total, 1),
+				Version:  version,
+			})
+		}
+	}
+	if copied == 0 {
+		return errors.New("no DLL files were found in the 7z archive")
 	}
 	return nil
 }
@@ -708,15 +1063,26 @@ func extractEntry(entry *zip.File, destination, relative string) error {
 }
 
 func copyOptionalCoreFiles(sourceCore, stagingCore string) error {
-	// The SDK package does not ship the Win32 control unit; preserve it from
-	// the old core so PC-window mode keeps working across core updates.
-	for _, name := range []string{"adb", "README.md", "MaaWin32ControlUnit.dll", "MaaAdbControlUnit.dll"} {
-		source := filepath.Join(sourceCore, name)
-		if _, err := os.Stat(source); err != nil {
+	// The SDK package only ships MaaCore.dll/MaaUtils.dll. Preserve the
+	// third-party runtime DLLs, control units and adb from the old core so the
+	// update does not leave a core that cannot load its dependencies.
+	entries, err := os.ReadDir(sourceCore)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") || name == "resource" || name == "cache" {
 			continue
 		}
 		target := filepath.Join(stagingCore, name)
-		if err := copyPath(source, target); err != nil {
+		if _, err := os.Stat(target); err == nil {
+			continue
+		}
+		if err := copyPath(filepath.Join(sourceCore, name), target); err != nil {
 			return err
 		}
 	}

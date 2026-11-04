@@ -35,24 +35,28 @@ function Add-Mirror([string]$url) {
 
 $tag = ""
 $assetUrl = ""
+$assetName = ""
 
 if ($Version -eq "latest") {
     $apiUrl = Add-Mirror "https://api.github.com/repos/ksqeib/MaaCore/releases/latest"
-    if ($DryRun) {
-        Write-Host "[dry-run] GET $apiUrl"
-        Write-Host "[dry-run] destination: $Destination"
-        return
-    }
-    $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -UseBasicParsing @proxyArgs
-    $tag = $release.tag_name
-    $asset = $release.assets | Where-Object { $_.name -match "^MaaCore-sdk-windows-x64-.+\.zip$" } | Select-Object -First 1
-    if (-not $asset) { throw "No MaaCore SDK asset found in the latest release." }
-    $assetUrl = Add-Mirror $asset.browser_download_url
 } else {
     $tag = "v" + $Version.TrimStart("v")
-    $assetName = "MaaCore-sdk-windows-x64-$tag.zip"
-    $assetUrl = Add-Mirror "https://github.com/ksqeib/MaaCore/releases/download/$tag/$assetName"
+    $apiUrl = Add-Mirror "https://api.github.com/repos/ksqeib/MaaCore/releases/tags/$tag"
 }
+
+if ($DryRun) {
+    Write-Host "[dry-run] GET $apiUrl"
+    Write-Host "[dry-run] destination: $Destination"
+    return
+}
+$release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -UseBasicParsing @proxyArgs
+$tag = $release.tag_name
+$asset = $release.assets | Where-Object {
+    $_.name -match "^MaaCore-sdk-windows-x64-.+\.(zip|7z)$" -and $_.name -notmatch "symbols"
+} | Select-Object -First 1
+if (-not $asset) { throw "No MaaCore SDK asset found in release $tag." }
+$assetName = $asset.name
+$assetUrl = Add-Mirror $asset.browser_download_url
 
 Write-Host "Release: $tag"
 Write-Host "Asset:   $assetUrl"
@@ -66,15 +70,36 @@ if ($DryRun) {
 
 New-Item -ItemType Directory -Force $Destination | Out-Null
 $tempRoot = Join-Path $env:TEMP ("MaaGO-core-" + [Guid]::NewGuid().ToString("N"))
-$zipPath = Join-Path $tempRoot "core.zip"
+$archiveExt = [IO.Path]::GetExtension($assetName)
+$archivePath = Join-Path $tempRoot ("core" + $archiveExt)
 New-Item -ItemType Directory -Force $tempRoot | Out-Null
 
 try {
     Write-Host "Downloading..."
-    Invoke-WebRequest -Uri $assetUrl -OutFile $zipPath -UseBasicParsing @proxyArgs
+    Invoke-WebRequest -Uri $assetUrl -OutFile $archivePath -UseBasicParsing @proxyArgs
     Write-Host "Extracting..."
     $extractDir = Join-Path $tempRoot "extract"
-    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+    if ($archiveExt -eq ".7z") {
+        $sevenZip = Get-Command 7z -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $sevenZip) {
+            foreach ($candidate in @(
+                (Join-Path $env:ProgramFiles "7-Zip\7z.exe"),
+                (Join-Path ${env:ProgramFiles(x86)} "7-Zip\7z.exe")
+            )) {
+                if ($candidate -and (Test-Path $candidate)) {
+                    $sevenZip = Get-Item $candidate
+                    break
+                }
+            }
+        }
+        if (-not $sevenZip) {
+            throw "This release ships a .7z archive. Install 7-Zip or use the in-app core update."
+        }
+        & $sevenZip.Source x $archivePath "-o$extractDir" -y | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "7-Zip failed with exit code $LASTEXITCODE." }
+    } else {
+        Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force
+    }
 
     $coreDll = Get-ChildItem $extractDir -Recurse -File -Filter "MaaCore.dll" | Select-Object -First 1
     if (-not $coreDll) { throw "MaaCore.dll was not found in the archive." }
@@ -82,10 +107,30 @@ try {
     $dlls = Get-ChildItem $binDir -File -Filter "*.dll"
     if (-not $dlls) { throw "No runtime DLLs were found next to MaaCore.dll." }
 
-    Get-ChildItem $Destination -File -Filter "*.dll" -ErrorAction SilentlyContinue | Remove-Item -Force
+    # The SDK archive only contains MaaCore/MaaUtils. Keep third-party runtime
+    # DLLs (OpenCV, ONNX Runtime, DirectML, FastDeploy) and control units that
+    # are already in the destination instead of deleting the whole directory.
     foreach ($dll in $dlls) {
         Copy-Item $dll.FullName $Destination -Force
         Write-Host "  copied $($dll.Name)"
+    }
+    $deps = Get-ChildItem $extractDir -Recurse -File -Filter "deps.json" | Select-Object -First 1
+    if ($deps) {
+        Copy-Item $deps.FullName $Destination -Force
+        Write-Host "  copied deps.json"
+        $depsData = Get-Content $deps.FullName -Raw | ConvertFrom-Json
+        $missing = @()
+        if ($depsData.runtimeFiles) {
+            foreach ($property in $depsData.runtimeFiles.PSObject.Properties) {
+                if (-not (Test-Path (Join-Path $Destination $property.Name))) {
+                    $missing += $property.Name
+                }
+            }
+        }
+        if ($missing.Count -gt 0) {
+            Write-Warning "Missing runtime DLLs: $($missing -join ', ')"
+            Write-Warning "Open MaaGO -> Settings -> Update -> Download runtime, or copy them from a full MAA release."
+        }
     }
     Set-Content -Path (Join-Path $Destination ".maago-core-version") -Value $tag -NoNewline -Encoding ascii
 
@@ -112,7 +157,7 @@ try {
     Write-Host "Restart MaaGO, then run Connection Diagnostics."
 } finally {
     if ($KeepArchive) {
-        Write-Host "Archive kept at $zipPath"
+        Write-Host "Archive kept at $archivePath"
     } else {
         Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
     }

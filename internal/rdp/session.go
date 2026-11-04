@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/casvisor/gordp"
@@ -69,6 +70,8 @@ type Session struct {
 
 	errMu   sync.Mutex
 	lastErr error
+
+	pointerDirty atomic.Bool
 }
 
 // Open authenticates to the remote host and starts pumping frames into a proxy
@@ -341,6 +344,45 @@ func (s *Session) FocusRemote() {
 		s.click(10, 450)
 		time.Sleep(200 * time.Millisecond)
 	}
+	s.CenterPointer()
+}
+
+// pointerSettle is how long the PC client needs to finish its mouse-position
+// parallax animation before a screenshot is taken.
+const pointerSettle = 90 * time.Millisecond
+
+// CenterPointer parks the remote pointer at the middle of the game window.
+// The PC client tilts the UI based on the pointer position; a centered pointer
+// keeps the parallax neutral. It is also far away from most home-screen cards.
+func (s *Session) CenterPointer() {
+	if s == nil || s.client == nil {
+		return
+	}
+	s.centerPointer()
+	s.pointerDirty.Store(false)
+}
+
+func (s *Session) centerPointer() {
+	x := uint16(s.cfg.Width / 2)
+	y := uint16(s.cfg.Height / 2)
+	s.mouseMove(x, y)
+	time.Sleep(pointerSettle)
+}
+
+func (s *Session) markPointerDirty() {
+	if s != nil {
+		s.pointerDirty.Store(true)
+	}
+}
+
+// ensurePointerParked is called by the PrintWindow hook before MaaCore captures.
+// After an automated click the pointer sits on the clicked button; moving it
+// back to the center first keeps the next frame's parallax stable.
+func (s *Session) ensurePointerParked() {
+	if s == nil || !s.pointerDirty.Swap(false) {
+		return
+	}
+	s.centerPointer()
 }
 
 // SnapshotJPEG encodes the latest frame, downscaled to maxWidth. It is used by

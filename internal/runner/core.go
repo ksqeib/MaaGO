@@ -417,6 +417,14 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 				break
 			}
 			trace.seen = key
+			if details.TaskChain == "Recruit" && hasDetail(details.First, "RecruitNow") {
+				r.SystemLog("warn", "公开招募：加急招募未成功（通常是加急许可不足或确认框未识别），已跳过；可在任务设置里关闭“加急招募”后重试")
+				break
+			}
+			if details.TaskChain == "Recruit" && (details.What == "RecruitError" || details.Why == "recognition error") {
+				r.SystemLog("warn", "公开招募识别失败：未能识别招募标签或按钮；如反复出现，请检查 resource/platform_diff/PC 的界面模板")
+				break
+			}
 			if len(details.First) == 0 && details.PreTask == "" {
 				break
 			}
@@ -668,6 +676,15 @@ func (r *Runner) latestDebugScreenshot() string {
 		}
 	}
 	return newest
+}
+
+func hasDetail(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 func fallback(primary, secondary string) string {

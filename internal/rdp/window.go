@@ -461,6 +461,7 @@ func (w *proxyWindow) onMouseMove(wParam, lParam uintptr) {
 	if w.session == nil {
 		return
 	}
+	w.session.markPointerDirty()
 	w.mouseMove.Add(1)
 	x, y := clientXY(lParam)
 	sx, sy := w.scale(x, y)
@@ -478,6 +479,9 @@ func (w *proxyWindow) onMouseMove(wParam, lParam uintptr) {
 func (w *proxyWindow) onLeftDown(lParam uintptr) {
 	x, y := clientXY(lParam)
 	sx, sy := w.scale(x, y)
+	if w.session != nil {
+		w.session.markPointerDirty()
+	}
 	w.pendingDown = true
 	w.dragging = false
 	w.downX, w.downY = int(sx), int(sy)
@@ -492,6 +496,9 @@ func (w *proxyWindow) onLeftUp(lParam uintptr) {
 	}
 	x, y := clientXY(lParam)
 	sx, sy := w.scale(x, y)
+	if w.session != nil {
+		w.session.markPointerDirty()
+	}
 	if !w.dragging {
 		// Use the same fast-path sequence as a normal RDP click: move, down,
 		// up in one write. Separate down/up writes were ignored by the game.
@@ -510,6 +517,7 @@ func (w *proxyWindow) onRightButton(down bool, lParam uintptr) {
 	if w.session == nil {
 		return
 	}
+	w.session.markPointerDirty()
 	x, y := clientXY(lParam)
 	sx, sy := w.scale(x, y)
 	w.session.mouseButton(gordp.ButtonRight, down, sx, sy)
@@ -521,6 +529,9 @@ func (w *proxyWindow) onRightButton(down bool, lParam uintptr) {
 }
 
 func (w *proxyWindow) onWheel(wParam, lParam uintptr) {
+	if w.session == nil {
+		return
+	}
 	delta := int16(wParam >> 16)
 	amount := int16(delta / 120)
 	if amount == 0 {
@@ -536,6 +547,9 @@ func (w *proxyWindow) onWheel(wParam, lParam uintptr) {
 	pt.X, pt.Y = int32(x), int32(y)
 	procScreenToClient.Call(w.hwnd, uintptr(unsafe.Pointer(&pt)))
 	sx, sy := w.scale(int(pt.X), int(pt.Y))
+	if w.session != nil {
+		w.session.markPointerDirty()
+	}
 	w.session.mouseWheel(sx, sy, amount)
 }
 

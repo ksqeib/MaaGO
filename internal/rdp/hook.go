@@ -129,6 +129,9 @@ func installPrintWindowHook(dllPath string) error {
 
 func hookPrintWindow(hwnd, hdc, flags uintptr) uintptr {
 	if w := lookupProxy(hwnd); w != nil {
+		if w.session != nil {
+			w.session.ensurePointerParked()
+		}
 		w.paint(hdc)
 		return 1
 	}

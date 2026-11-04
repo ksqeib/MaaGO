@@ -1,0 +1,47 @@
+{
+  "AccountLogoutConfirm": {
+    "Doc": "PC confirm dialog, prefer the PC-specific crop",
+    "baseTask": "LogoutConfirm",
+    "template": ["PopupConfirmPC.png", "PopupConfirm.png"],
+    "roi": [630, 445, 650, 95],
+    "templThreshold": 0.7
+  },
+  "ReturnConfirm": {
+    "template": ["PopupConfirmPC.png", "PopupConfirm.png"],
+    "action": "ClickSelf",
+    "roi": [630, 400, 650, 160],
+    "templThreshold": 0.7,
+    "next": [
+      "ReturnButtons#next",
+      "MainThemes#next",
+      "ReturnConfirm@LoadingIcon",
+      "CloseAnnos#next",
+      "ReturnConfirm"
+    ]
+  },
+  "OfflineConfirmAfterBattle": {
+    "Doc": "PC confirm dialog detection; keep the existing Stop action",
+    "template": ["PopupConfirmPC.png", "PopupConfirm.png"],
+    "action": "Stop",
+    "roi": [630, 400, 650, 160],
+    "templThreshold": 0.7,
+    "next": ["PRTS#next", "OfflineConfirm", "StartUpThemes#next", "OfflineConfirmAfterBattle"]
+  },
+  "RecruitRefreshConfirm": {
+    "template": ["PopupConfirmPC.png", "PopupConfirm.png"],
+    "action": "ClickSelf",
+    "roi": [630, 400, 650, 160],
+    "templThreshold": 0.7,
+    "preDelay": 500,
+    "postDelay": 500,
+    "next": ["RecruitRefreshConfirm@LoadingText", "Recruit@OfflineConfirm", "SleepThenStop"]
+  },
+  "QuickSwitch@Confirm": {
+    "Doc": "PC confirm dialog after switching back home",
+    "template": ["PopupConfirmPC.png", "PopupConfirm.png"],
+    "action": "ClickSelf",
+    "roi": [630, 400, 650, 160],
+    "templThreshold": 0.7,
+    "next": ["QuickSwitch@Confirm", "LoadingText", "LoadingIcon", "#back"]
+  }
+}

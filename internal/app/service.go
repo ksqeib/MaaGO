@@ -166,6 +166,31 @@ func (s *Service) GetCoreStatus() CoreStatus {
 	}
 }
 
+// GetCoreRuntimeStatus checks third-party DLLs against core/deps.json.
+func (s *Service) GetCoreRuntimeStatus() updater.RuntimeStatus {
+	return s.updates.RuntimeStatus()
+}
+
+// RepairCoreRuntime downloads the pinned runtime pack for the installed core.
+// It is staged like other updates and applied on the next start.
+func (s *Service) RepairCoreRuntime() error {
+	if s.runner != nil && s.runner.Busy() {
+		return fmt.Errorf("stop the running task queue first")
+	}
+	if s.updates.Pending() {
+		return fmt.Errorf("an update is already staged; restart MaaGO first")
+	}
+	if s.updates.Busy() {
+		return fmt.Errorf("an update is already running")
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+		defer cancel()
+		_ = s.updates.DownloadRuntime(ctx)
+	}()
+	return nil
+}
+
 // CheckCoreUpdate asks GitHub for the latest MaaCore release.
 func (s *Service) CheckCoreUpdate() (updater.ReleaseInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
@@ -193,8 +218,42 @@ func (s *Service) StartCoreUpdate(version string) error {
 	return nil
 }
 
-// StartResourceUpdate downloads and stages MaaResource hot-update files.
-func (s *Service) StartResourceUpdate() error {
+// CheckBaseResourceUpdate asks for the latest official MAA release, which is
+// the base resource (including platform_diff/PC).
+func (s *Service) CheckBaseResourceUpdate() (updater.ReleaseInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return s.updates.CheckBase(ctx)
+}
+
+// StartBaseResourceUpdate downloads and stages the official base resource.
+func (s *Service) StartBaseResourceUpdate() error {
+	if s.runner != nil && s.runner.Busy() {
+		return fmt.Errorf("stop the running task queue first")
+	}
+	if s.updates.Pending() {
+		return fmt.Errorf("an update is already staged; restart MaaGO first")
+	}
+	if s.updates.Busy() {
+		return fmt.Errorf("an update is already running")
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+		defer cancel()
+		_ = s.updates.DownloadBase(ctx)
+	}()
+	return nil
+}
+
+// CheckResourceOverlayUpdate asks MaaResource for the latest overlay commit.
+func (s *Service) CheckResourceOverlayUpdate() (updater.ReleaseInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return s.updates.CheckOverlay(ctx)
+}
+
+// StartResourceOverlayUpdate downloads and stages the MaaResource overlay.
+func (s *Service) StartResourceOverlayUpdate() error {
 	if s.runner != nil && s.runner.Busy() {
 		return fmt.Errorf("stop the running task queue first")
 	}
@@ -207,9 +266,14 @@ func (s *Service) StartResourceUpdate() error {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		_ = s.updates.DownloadResource(ctx)
+		_ = s.updates.DownloadOverlay(ctx)
 	}()
 	return nil
+}
+
+// GetResourceVersions returns the installed base/overlay markers.
+func (s *Service) GetResourceVersions() updater.ResourceVersions {
+	return s.updates.Versions()
 }
 
 // GetUpdateStatus returns the current update progress.
@@ -506,6 +570,7 @@ func (s *Service) ConnectRDP() (RDPPreview, error) {
 		_ = rdp.InstallPrintWindowHook(filepath.Join(s.core.Dir(), "MaaWin32ControlUnit.dll"))
 	}
 	session.UnlockIfLocked(rc.Password)
+	session.CenterPointer()
 	return s.GetRDPPreview(640), nil
 }
 

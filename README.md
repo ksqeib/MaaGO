@@ -30,7 +30,7 @@ MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArkn
   - 通知：Windows 系统通知（完成/出错/定时前）
   - 外观：浅色 / 深色 / 跟随系统、简体中文 / English
   - 托盘：最小化到托盘、关闭到托盘
-  - 更新：应用内代理、检查更新、下载核心、更新资源、重启安装
+  - 更新：应用内代理、检查更新、下载核心、前置运行库修复、资源底包、资源覆盖、重启安装
 - 系统托盘：显示窗口、开始任务、停止任务、退出
 - 独立设计的界面与图标，不使用 MAA 官方 logo
 
@@ -105,6 +105,51 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
 7. `触控测试`：点击 `(10,10)`，再做一次截图确认界面仍可读
 
 每一步都会显示状态、耗时和具体错误；前置步骤失败时，后续步骤标记为“因上一步未通过而跳过”。
+
+## PC 客户端辅助：禁用 PRTS 软件光标
+
+PC 客户端会渲染自己的 PRTS 软件光标，在 RDP / `PrintWindow` 截图里可能遮住模板，导致识别失败；掉帧时也可能卡顿。需要时可以停用这个软件光标，让游戏使用 Windows 系统光标。
+
+使用第三方工具 [assfafa/arknights-system-cursor](https://github.com/assfafa/arknights-system-cursor)：
+
+- Release：`v1.0.0`
+- 便携包：`ArknightsSystemCursor-v1.0.0-win-portable.zip`
+- SHA-256：`9a19aafa58b047b66677bb3789def985df8e9e0b6d5465fb51687d75343577e2`
+- 许可证：MIT
+- 说明：非鹰角 / MAA 官方工具；只读检查资源包，备份后改名，不修改游戏 EXE、DLL、注册表，也不注入进程。
+
+使用前**完全退出游戏**，然后：
+
+```powershell
+$tool = ".\ArknightsSystemCursor-v1.0.0-win-portable\ArknightsSystemCursor.Cli.exe"
+$game = "D:\Hypergryph Launcher\games\Arknights"
+
+# 查看状态
+& $tool status --game-dir $game --json
+
+# 启用系统光标
+& $tool enable --game-dir $game --json
+
+# 需要时恢复游戏光标
+& $tool restore --game-dir $game --json
+```
+
+也可以直接运行 `ArknightsSystemCursor.exe`，选择 `Arknights.exe` 后点“启用系统指针”。
+
+工具会解码 UnityFS，检查包内是否包含 `dyn/mouse/pc_mouse_mgr.prefab`，因此不依赖固定的匿名文件名；确认后才会把资源改名为 `.system-cursor-disabled-<sha256前缀>`。备份位于：
+
+```text
+%LOCALAPPDATA%\ArknightsSystemCursor\installations\
+```
+
+注意事项：
+
+- 游戏更新或启动器修复后可能恢复软件光标，重新执行 `enable` 即可。
+- 如果游戏出现资源加载错误或指针异常，执行 `restore` 恢复。
+- 远端机器访问 GitHub 失败时，可以在本机下载 portable ZIP，再通过局域网 HTTP / 共享传到远端；不要把临时 HTTP 服务暴露到公网。
+- 这和 MaaGO 的鼠标归中配合使用：先移除软件光标，再让 RDP 鼠标在截图前回到窗口中央，可以减少“光标遮挡 + 鼠标视差”造成的模板失败。
+
+详细使用说明见 [usage.zh-CN.md](./docs/usage.zh-CN.md) 的 PC / RDP 部分。
 
 ## 开发
 
