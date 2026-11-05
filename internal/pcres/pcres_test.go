@@ -74,3 +74,17 @@ func TestEnsureExternalResourceDir(t *testing.T) {
 		t.Fatal("QuickSwitch@Confirm override is missing")
 	}
 }
+
+func TestShouldReplaceOnlyKnownLegacyTemplate(t *testing.T) {
+	legacy := []byte("legacy-template")
+	legacyHash := fileSHA256(legacy)
+	if !shouldReplace(legacy, legacyHash) {
+		t.Fatal("known legacy template should be replaced")
+	}
+	if shouldReplace([]byte("upstream-template"), legacyHash) {
+		t.Fatal("unknown templates must be preserved")
+	}
+	if shouldReplace(legacy, "") {
+		t.Fatal("assets without a legacy hash must be preserved")
+	}
+}

@@ -6,7 +6,9 @@ package pcres
 
 import (
 	"bytes"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -33,16 +35,30 @@ var roguelikePC []byte
 var assets = []struct {
 	rel  string
 	data []byte
+	// legacySHA256 is the bundled file this asset replaces. An installed file
+	// with another hash is preserved, so a newer upstream template wins.
+	legacySHA256 string
 }{
-	{"platform_diff/PC/resource/tasks/tasks.json", pcTasks},
-	{"platform_diff/PC/resource/template/Roguelike/base/Roguelike@StageTraderInvestSystemPC.png", roguelikePC},
-	{"platform_diff/PC/resource/template/Recruit/RecruitFinish.png", recruitFinish},
-	{"platform_diff/PC/resource/template/PopupConfirmPC.png", popupConfirmPC},
-	{"platform_diff/PC/resource/template/PopupCancelPC.png", popupCancelPC},
+	{"platform_diff/PC/resource/tasks/tasks.json", pcTasks, ""},
+	{"platform_diff/PC/resource/template/Roguelike/base/Roguelike@StageTraderInvestSystemPC.png", roguelikePC, ""},
+	// The 2026-11 recruit UI widened the "聘用候选人" button; replace only the
+	// template MaaGO used to ship.
+	{"platform_diff/PC/resource/template/Recruit/RecruitFinish.png", recruitFinish, "ee36e3475142bb9c1c6f0720a721e1575bb5a816a0ad3459f7bed2b97a14967f"},
+	{"platform_diff/PC/resource/template/PopupConfirmPC.png", popupConfirmPC, ""},
+	{"platform_diff/PC/resource/template/PopupCancelPC.png", popupCancelPC, ""},
 }
 
-// Ensure restores missing PC overlay files. Existing files are never
-// overwritten, so a future upstream PC template takes precedence.
+func fileSHA256(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func shouldReplace(existing []byte, legacySHA256 string) bool {
+	return legacySHA256 != "" && fileSHA256(existing) == legacySHA256
+}
+
+// Ensure restores missing PC overlay files. Existing files are preserved,
+// except for bundled templates that match a known outdated hash.
 func Ensure(resourceDir string) error {
 	if resourceDir == "" {
 		return nil
@@ -50,7 +66,13 @@ func Ensure(resourceDir string) error {
 	for _, asset := range assets {
 		path := filepath.Join(resourceDir, asset.rel)
 		if _, err := os.Stat(path); err == nil {
-			continue
+			if asset.legacySHA256 == "" {
+				continue
+			}
+			existing, readErr := os.ReadFile(path)
+			if readErr != nil || !shouldReplace(existing, asset.legacySHA256) {
+				continue
+			}
 		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
