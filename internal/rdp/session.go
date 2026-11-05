@@ -385,6 +385,110 @@ func (s *Session) ensurePointerParked() {
 	s.centerPointer()
 }
 
+// typeTextSlow sends characters with a small delay. The RDP console can drop
+// characters when a long command is sent in one Unicode burst.
+func (s *Session) typeTextSlow(text string, delay time.Duration) {
+	for _, r := range text {
+		s.char(r)
+		time.Sleep(delay)
+	}
+}
+
+// RunCommand executes a command on the remote desktop through Task Manager's
+// "Run new task" dialog. RDP only exposes keyboard/mouse input, so this is the
+// smallest reliable command channel without installing an agent.
+func (s *Session) RunCommand(command string) error {
+	return s.runCommand(command, false)
+}
+
+func (s *Session) runCommand(command string, elevated bool) error {
+	if s == nil || s.client == nil || !s.Alive() {
+		return fmt.Errorf("RDP 会话未连接")
+	}
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return fmt.Errorf("远端命令为空")
+	}
+
+	// Ctrl+Shift+Esc opens Task Manager and brings an existing instance forward.
+	s.key(0x1D, true, false)  // Ctrl
+	s.key(0x2A, true, false)  // Shift
+	s.key(0x01, true, false)  // Esc
+	s.key(0x01, false, false) // Esc up
+	s.key(0x2A, false, false) // Shift up
+	s.key(0x1D, false, false) // Ctrl up
+	time.Sleep(2200 * time.Millisecond)
+
+	// File -> Run new task.
+	s.key(0x38, true, false)  // Alt
+	s.key(0x21, true, false)  // F
+	s.key(0x21, false, false) // F up
+	s.key(0x38, false, false) // Alt up
+	time.Sleep(700 * time.Millisecond)
+	s.key(0x31, true, false)  // N
+	s.key(0x31, false, false) // N up
+	time.Sleep(900 * time.Millisecond)
+
+	// Replace the pre-filled command.
+	s.key(0x1D, true, false)  // Ctrl
+	s.key(0x1E, true, false)  // A
+	s.key(0x1E, false, false) // A up
+	s.key(0x1D, false, false) // Ctrl up
+	s.typeTextSlow(command, 8*time.Millisecond)
+	time.Sleep(250 * time.Millisecond)
+	if elevated {
+		// Tab to "Create this task with administrative privileges", Space to
+		// check it. The game runs elevated, so taskkill needs this.
+		s.key(0x0F, true, false)
+		s.key(0x0F, false, false)
+		time.Sleep(150 * time.Millisecond)
+		s.key(0x39, true, false)
+		s.key(0x39, false, false)
+		time.Sleep(150 * time.Millisecond)
+	}
+	s.key(0x1C, true, false)
+	s.key(0x1C, false, false)
+	time.Sleep(900 * time.Millisecond)
+
+	// Minimize Task Manager so it does not cover the game or MaaCore's next
+	// screenshot. Alt+Space -> N is the standard window-menu shortcut.
+	s.key(0x38, true, false)  // Alt
+	s.key(0x39, true, false)  // Space
+	s.key(0x39, false, false) // Space up
+	s.key(0x38, false, false) // Alt up
+	time.Sleep(250 * time.Millisecond)
+	s.key(0x31, true, false)  // N
+	s.key(0x31, false, false) // N up
+	time.Sleep(400 * time.Millisecond)
+	return nil
+}
+
+// LaunchArknights starts the PC client on the remote desktop if it is not
+// already running, then waits for its window to appear.
+func (s *Session) LaunchArknights(gamePath string) error {
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return fmt.Errorf("RDP 游戏路径为空")
+	}
+	command := fmt.Sprintf(
+		`powershell -NoProfile -Command "if (-not (Get-Process Arknights -ErrorAction SilentlyContinue)) { Start-Process '%s' }"`,
+		strings.ReplaceAll(gamePath, "'", "''"),
+	)
+	if err := s.runCommand(command, true); err != nil {
+		return err
+	}
+	// StartUp handles the title/login screens; this just gives the client time
+	// to create its window before MaaCore binds.
+	time.Sleep(18 * time.Second)
+	return nil
+}
+
+// CloseArknights force-closes the PC client. The game normally runs elevated,
+// so taskkill is launched from an elevated Task Manager task.
+func (s *Session) CloseArknights() error {
+	return s.runCommand(`cmd /c taskkill /IM Arknights.exe /F`, true)
+}
+
 // SnapshotJPEG encodes the latest frame, downscaled to maxWidth. It is used by
 // the in-app preview; MaaCore itself uses the full-resolution frame.
 func (s *Session) SnapshotJPEG(maxWidth, quality int) ([]byte, int, int, error) {

@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 if (-not $Destination) {
-    $Destination = Join-Path (Split-Path -Parent $PSScriptRoot) "resource"
+    $Destination = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "base") "resource"
 }
 $Destination = [IO.Path]::GetFullPath($Destination)
 if (-not $Proxy) {

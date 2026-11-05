@@ -16,7 +16,7 @@ if (-not $Source) {
 }
 $Source = [IO.Path]::GetFullPath($Source)
 $Destination = [IO.Path]::GetFullPath($Destination)
-$resourceDir = Join-Path (Split-Path -Parent $Destination) "resource"
+$resourceDir = Join-Path (Join-Path (Split-Path -Parent $Destination) "base") "resource"
 New-Item -ItemType Directory -Force $Destination | Out-Null
 
 $coreDll = Get-ChildItem $Source -Recurse -File -Filter "MaaCore.dll" | Select-Object -First 1

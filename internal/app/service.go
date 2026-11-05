@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"MaaGO/internal/apppath"
+	"MaaGO/internal/autostart"
 	"MaaGO/internal/config"
 	"MaaGO/internal/connection"
 	"MaaGO/internal/diagnostics"
@@ -65,6 +66,13 @@ type CoreStatus struct {
 	Message   string `json:"message"`
 	Demo      bool   `json:"demo"`
 	Version   string `json:"version"`
+	// Source is the core actually loaded: custom or official.
+	Source string `json:"source"`
+	// ConfiguredSource is what config.json asks for; it may differ when the
+	// official core is selected but base/MaaCore.dll is missing.
+	ConfiguredSource string `json:"configuredSource"`
+	// OfficialAvailable reports whether base/MaaCore.dll exists.
+	OfficialAvailable bool `json:"officialAvailable"`
 }
 
 // GetAppInfo returns build and environment metadata for the About page.
@@ -87,6 +95,21 @@ func (s *Service) GetAppInfo() AppInfo {
 // GetConfig returns the persisted application configuration.
 func (s *Service) GetConfig() (config.AppConfig, error) {
 	return config.Load()
+}
+
+// SetAutoStart adds or removes MaaGO from the current user's Run key.
+func (s *Service) SetAutoStart(enabled bool) error {
+	if err := autostart.Set(enabled); err != nil {
+		return err
+	}
+	return config.Update(func(c *config.AppConfig) {
+		c.Run.AutoStart = enabled
+	})
+}
+
+// GetAutoStart reports whether the Windows Run entry currently exists.
+func (s *Service) GetAutoStart() (bool, error) {
+	return autostart.Enabled()
 }
 
 // SaveConfig persists the application configuration.
@@ -127,43 +150,50 @@ func (s *Service) SaveConfig(cfg config.AppConfig) error {
 
 // GetCoreStatus reports the loaded MaaCore runtime.
 func (s *Service) GetCoreStatus() CoreStatus {
+	cfg, _ := config.Load()
+	status := CoreStatus{
+		Source:           config.CoreCustom,
+		ConfiguredSource: cfg.Core.Source,
+	}
+	if status.ConfiguredSource != config.CoreOfficial {
+		status.ConfiguredSource = config.CoreCustom
+	}
+	if s.core != nil && s.core.Dir() != "" {
+		officialDir := filepath.Join(filepath.Dir(filepath.Clean(s.core.Dir())), "base")
+		if _, err := os.Stat(filepath.Join(officialDir, "MaaCore.dll")); err == nil {
+			status.OfficialAvailable = true
+		}
+		if filepath.Clean(s.core.Dir()) == filepath.Clean(officialDir) {
+			status.Source = config.CoreOfficial
+		}
+	}
+
 	if s.core != nil && s.core.Available() {
 		message := "MaaCore 已加载"
 		if version := s.core.Version(); version != "" {
 			message = fmt.Sprintf("MaaCore %s 已加载", version)
 		}
+		status.Path = filepath.Join(s.core.Dir(), "MaaCore.dll")
+		status.Version = s.core.Version()
 		if err := s.core.ResourceError(); err != nil {
-			return CoreStatus{
-				Available: false,
-				Path:      filepath.Join(s.core.Dir(), "MaaCore.dll"),
-				Message:   fmt.Sprintf("MaaCore 资源加载失败：%v", err),
-				Demo:      true,
-				Version:   s.core.Version(),
-			}
+			status.Message = fmt.Sprintf("MaaCore 资源加载失败：%v", err)
+			status.Demo = true
+		} else {
+			status.Available = true
+			status.Message = message
 		}
-		return CoreStatus{
-			Available: true,
-			Path:      filepath.Join(s.core.Dir(), "MaaCore.dll"),
-			Message:   message,
-			Demo:      false,
-			Version:   s.core.Version(),
-		}
+		return status
 	}
 
-	path := ""
-	message := "未找到可用的 MaaCore，当前为界面演示模式。"
+	status.Demo = true
+	status.Message = "未找到可用的 MaaCore，当前为界面演示模式。"
 	if s.core != nil {
-		path = filepath.Join(s.core.Dir(), "MaaCore.dll")
+		status.Path = filepath.Join(s.core.Dir(), "MaaCore.dll")
 		if err := s.core.Err(); err != nil {
-			message = fmt.Sprintf("MaaCore 不可用：%v", err)
+			status.Message = fmt.Sprintf("MaaCore 不可用：%v", err)
 		}
 	}
-	return CoreStatus{
-		Available: false,
-		Path:      path,
-		Message:   message,
-		Demo:      true,
-	}
+	return status
 }
 
 // GetCoreRuntimeStatus checks third-party DLLs against core/deps.json.
@@ -372,7 +402,7 @@ func (s *Service) GetStageCatalog(refresh bool) (stages.Catalog, error) {
 		resourceDir = s.core.ResourceDir()
 	}
 	if resourceDir == "" {
-		resourceDir = filepath.Join(filepath.Dir(maa.DefaultCoreDir()), "resource")
+		resourceDir = filepath.Join(filepath.Dir(maa.DefaultCoreDir()), "base", "resource")
 	}
 	cachePath := filepath.Join(apppath.CacheDir(), stages.ActivityCacheFile)
 	stale := true

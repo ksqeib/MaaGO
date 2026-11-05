@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  FaCloudDownloadAlt,
   FaCrosshairs,
   FaGift,
   FaIndustry,
@@ -17,6 +18,7 @@ const icons: Record<TaskIconName, React.ReactNode> = {
   users: <FaUsers />,
   shopping: <FaShoppingCart />,
   gift: <FaGift />,
+  update: <FaCloudDownloadAlt />,
 };
 
 export const TaskIcon = ({

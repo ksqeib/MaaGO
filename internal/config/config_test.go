@@ -9,6 +9,24 @@ import (
 	"MaaGO/internal/apppath"
 )
 
+func TestNormalizePCPostActionAndGamePath(t *testing.T) {
+	cfg := Default()
+	cfg.Run.PostAction = "shutdown"
+	cfg.Connection.RDP.GamePath = ""
+	cfg.Normalize()
+	if cfg.Run.PostAction != "none" {
+		t.Fatalf("postAction=%q, want none", cfg.Run.PostAction)
+	}
+	if cfg.Connection.RDP.GamePath != DefaultRDPGamePath {
+		t.Fatalf("gamePath=%q, want %q", cfg.Connection.RDP.GamePath, DefaultRDPGamePath)
+	}
+	cfg.Run.PostAction = "exitArknights"
+	cfg.Normalize()
+	if cfg.Run.PostAction != "exitArknights" {
+		t.Fatalf("postAction=%q, want exitArknights", cfg.Run.PostAction)
+	}
+}
+
 func TestReloadMigratesLegacyConfigAndSeries(t *testing.T) {
 	appData := t.TempDir()
 	configDir := t.TempDir()
@@ -77,5 +95,22 @@ func TestReloadMigratesLegacyConfigAndSeries(t *testing.T) {
 	}
 	if apppath.ConfigPath() != newPath {
 		t.Fatalf("ConfigPath = %q, want %q", apppath.ConfigPath(), newPath)
+	}
+}
+
+func TestNormalizeCoreSource(t *testing.T) {
+	cfg := Default()
+	if cfg.Core.Source != CoreCustom {
+		t.Fatalf("default core source = %q, want %q", cfg.Core.Source, CoreCustom)
+	}
+	cfg.Core.Source = CoreOfficial
+	cfg.Normalize()
+	if cfg.Core.Source != CoreOfficial {
+		t.Fatalf("core source = %q, want %q", cfg.Core.Source, CoreOfficial)
+	}
+	cfg.Core.Source = "unsupported"
+	cfg.Normalize()
+	if cfg.Core.Source != CoreCustom {
+		t.Fatalf("core source = %q, want %q", cfg.Core.Source, CoreCustom)
 	}
 }

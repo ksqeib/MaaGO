@@ -10,6 +10,24 @@ import (
 	"MaaGO/internal/maa"
 )
 
+func TestWantsLaunchClient(t *testing.T) {
+	tests := []struct {
+		name  string
+		tasks []config.TaskConfig
+		want  bool
+	}{
+		{"no startup", []config.TaskConfig{{Type: config.TaskAward}}, false},
+		{"default", []config.TaskConfig{{Type: config.TaskStartUp}}, true},
+		{"explicit false", []config.TaskConfig{{Type: config.TaskStartUp, Options: map[string]any{"launchClient": false}}}, false},
+		{"explicit true", []config.TaskConfig{{Type: config.TaskStartUp, Options: map[string]any{"launchClient": true}}}, true},
+	}
+	for _, test := range tests {
+		if got := wantsLaunchClient(test.tasks); got != test.want {
+			t.Errorf("%s: got %v, want %v", test.name, got, test.want)
+		}
+	}
+}
+
 func TestCoreRunnerRequiresAddress(t *testing.T) {
 	appData, err := os.MkdirTemp("", "maago-runner-user-")
 	if err != nil {

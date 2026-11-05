@@ -17,7 +17,7 @@ const clientTypes = [
 
 export const RunSettings = () => {
   const { t, i18n } = useTranslation();
-  const { config, updateConfig } = useAppStore();
+  const { config, updateConfig, setAutoStart } = useAppStore();
   const isZh = String(i18n.resolvedLanguage || "").startsWith("zh");
 
   const updateRun = (patch: Partial<typeof config.run>) => {
@@ -70,6 +70,17 @@ export const RunSettings = () => {
 
         <SettingRow
           control={
+            <Switch
+              checked={config.run.autoStart}
+              onChange={(autoStart) => void setAutoStart(autoStart)}
+            />
+          }
+          description={t("settings.run.auto_start_hint")}
+          title={t("settings.run.auto_start")}
+        />
+
+        <SettingRow
+          control={
             <input
               className="h-9 w-24 rounded-xl border border-border bg-surface-secondary/60 px-3 text-sm outline-none"
               min={0}
@@ -100,39 +111,9 @@ export const RunSettings = () => {
               <option value="exitArknights">
                 {t("settings.run.post_action_exit_arknights")}
               </option>
-              <option value="exitEmulator">
-                {t("settings.run.post_action_exit_emulator")}
-              </option>
-              <option value="exitSelf">{t("settings.run.post_action_exit_self")}</option>
-              <option value="lockScreen">{t("settings.run.post_action_lock")}</option>
-              <option value="sleep">{t("settings.run.post_action_sleep")}</option>
-              <option value="hibernate">{t("settings.run.post_action_hibernate")}</option>
-              <option value="shutdown">{t("settings.run.post_action_shutdown")}</option>
             </select>
           }
           title={t("settings.run.post_action")}
-        />
-
-        <SettingRow
-          control={
-            <Switch
-              checked={config.run.postActionOnlyWhenNoOther}
-              onChange={(postActionOnlyWhenNoOther) =>
-                updateRun({ postActionOnlyWhenNoOther })
-              }
-            />
-          }
-          title={t("settings.run.only_no_other")}
-        />
-
-        <SettingRow
-          control={
-            <Switch
-              checked={config.run.postActionSkipOnError}
-              onChange={(postActionSkipOnError) => updateRun({ postActionSkipOnError })}
-            />
-          }
-          title={t("settings.run.skip_on_error")}
         />
       </SectionCard>
     </div>

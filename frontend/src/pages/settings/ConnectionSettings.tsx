@@ -59,6 +59,7 @@ const defaultRDP = {
   domain: "",
   width: 1280,
   height: 720,
+  gamePath: "D:\\Hypergryph Launcher\\games\\Arknights\\Arknights.exe",
 };
 
 export const ConnectionSettings = () => {
@@ -249,6 +250,18 @@ export const ConnectionSettings = () => {
               }
               description={t("settings.connection.rdp_resolution_hint")}
               title={t("settings.connection.rdp_resolution")}
+            />
+            <SettingRow
+              control={
+                <input
+                  className="h-9 w-96 rounded-xl border border-border bg-surface-secondary/60 px-3 text-sm outline-none focus:border-brand-500/60"
+                  onChange={(event) => updateRDP({ gamePath: event.target.value })}
+                  placeholder="D:\\Hypergryph Launcher\\games\\Arknights\\Arknights.exe"
+                  value={rdp.gamePath}
+                />
+              }
+              description={t("settings.connection.rdp_game_path_hint")}
+              title={t("settings.connection.rdp_game_path")}
             />
             <p className="py-2 text-[11px] leading-relaxed text-muted">
               {t("settings.connection.rdp_note")}

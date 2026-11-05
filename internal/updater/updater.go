@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -252,7 +253,7 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 		Total:    release.Size,
 		Progress: 0,
 	})
-	if err := s.download(ctx, client, release.AssetURL, zipPath, release.Tag); err != nil {
+	if err := s.download(ctx, client, release.AssetURL, zipPath, release.Tag, release.Size); err != nil {
 		s.fail(err)
 		return err
 	}
@@ -299,110 +300,55 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 	return nil
 }
 
-// DownloadResource downloads a full base resource when none is installed, or
-// MaaResource hot-update files when the base resource already exists. The
-// staged resource is applied next to the core directory on restart.
-func (s *Service) DownloadResource(ctx context.Context) error {
-	if err := s.begin("resource"); err != nil {
-		return err
-	}
-	defer s.end()
+// installRoot is the program directory that owns core/, base/ and
+// .maago-updates/.
+func (s *Service) installRoot() string {
+	return filepath.Dir(filepath.Clean(s.coreDir))
+}
 
-	cfg, err := config.Load()
-	if err != nil {
-		s.fail(err)
-		return err
-	}
-	resourceDir := filepath.Join(filepath.Dir(s.coreDir), "resource")
-	needBase := false
-	if _, err := os.Stat(filepath.Join(resourceDir, "version.json")); err != nil {
-		needBase = true
-	}
+// baseDir is the official MAA package. It doubles as the official core
+// directory because MaaCore.dll sits at the package root.
+func (s *Service) baseDir() string {
+	return filepath.Join(s.installRoot(), "base")
+}
 
-	client, err := httpClient(cfg, "")
-	if err != nil {
-		s.fail(err)
-		return err
-	}
+// resourceDir is the shared resource tree used by both cores.
+func (s *Service) resourceDir() string {
+	return filepath.Join(s.baseDir(), "resource")
+}
 
-	stageRoot := filepath.Join(s.updates, "resource-"+time.Now().Format("20060102-150405"))
-	cleanStaging(s.updates)
-	_ = os.RemoveAll(stageRoot)
-	if err := os.MkdirAll(stageRoot, 0o755); err != nil {
-		s.fail(err)
-		return err
-	}
-	zipPath := filepath.Join(stageRoot, "resource.zip")
-
-	url := ""
-	version := ""
-	if needBase {
-		release, err := fetchOfficialLatest(ctx, client)
-		if err != nil {
-			s.fail(err)
-			return err
-		}
-		url = withMirror(release.AssetURL, cfg.Update.Mirror)
-		version = release.Tag
-		s.setStatus(Status{Stage: StageDownload, Message: "downloading base resource " + release.Tag, Version: release.Tag, Total: release.Size})
-	} else {
-		url = withMirror(resourceURL, cfg.Update.Mirror)
-		s.setStatus(Status{Stage: StageDownload, Message: "downloading MaaResource"})
-	}
-	if err := s.download(ctx, client, url, zipPath, version); err != nil {
-		s.fail(err)
-		return err
-	}
-
-	s.setStatus(Status{Stage: StageExtracting, Message: "extracting resource", Progress: 0})
-	stagingResource := filepath.Join(stageRoot, "resource")
-	if err := extractResource(zipPath, stagingResource, s.setStatus); err != nil {
-		s.fail(err)
-		return err
-	}
-	if _, err := os.Stat(filepath.Join(stagingResource, "version.json")); err != nil {
-		err = errors.New("downloaded resource has no version.json")
-		s.fail(err)
-		return err
-	}
-	if err := writePending(s.updates, pendingUpdate{
-		Kind:    "resource",
-		Staging: stagingResource,
-		Version: version,
-	}); err != nil {
-		s.fail(err)
-		return err
-	}
-
-	message := "resource update is ready; restart to apply"
-	if needBase {
-		message = "base resource is ready; restart to apply"
-	}
-	s.setStatus(Status{
-		Stage:        StageReady,
-		Message:      message,
-		Progress:     100,
-		NeedsRestart: true,
-	})
-	return nil
+// baseInstalled reports whether a base resource is available to merge overlays
+// into or to load.
+func (s *Service) baseInstalled() bool {
+	_, err := os.Stat(filepath.Join(s.resourceDir(), "version.json"))
+	return err == nil
 }
 
 // ResourceVersions reports the installed base/overlay markers and the resource
 // data date. It is used by the separate update sections.
 type ResourceVersions struct {
+	Core    string `json:"core"`
 	Base    string `json:"base"`
 	Overlay string `json:"overlay"`
 	Updated string `json:"updated"`
 }
 
 func (s *Service) Versions() ResourceVersions {
-	resourceDir := filepath.Join(filepath.Dir(s.coreDir), "resource")
-	read := func(name string) string {
-		data, err := os.ReadFile(filepath.Join(resourceDir, name))
+	resourceDir := s.resourceDir()
+	read := func(path string) string {
+		data, err := os.ReadFile(path)
 		if err != nil {
 			return ""
 		}
 		return strings.TrimSpace(string(data))
+	}
+	base := ""
+	if _, err := os.Stat(filepath.Join(s.baseDir(), "MaaCore.dll")); err == nil {
+		base = read(filepath.Join(s.baseDir(), ".maago-base-version"))
+		if base == "" {
+			// A migrated install has base/resource but no official core yet.
+			base = read(filepath.Join(resourceDir, ".maago-base-version"))
+		}
 	}
 	var meta struct {
 		LastUpdated string `json:"last_updated"`
@@ -411,8 +357,9 @@ func (s *Service) Versions() ResourceVersions {
 		_ = json.Unmarshal(data, &meta)
 	}
 	return ResourceVersions{
-		Base:    read(".maago-base-version"),
-		Overlay: read(".maago-overlay-version"),
+		Core:    read(filepath.Join(s.coreDir, ".maago-core-version")),
+		Base:    base,
+		Overlay: read(filepath.Join(resourceDir, ".maago-overlay-version")),
 		Updated: meta.LastUpdated,
 	}
 }
@@ -463,7 +410,9 @@ func (s *Service) CheckOverlay(ctx context.Context) (ReleaseInfo, error) {
 	return info, nil
 }
 
-// DownloadBase stages the official MAA release resource as the base resource.
+// DownloadBase stages the whole official MAA package under base/. Keeping the
+// entire package means the official MaaCore.dll is available as an alternative
+// core, and its resource/ directory is the shared resource tree.
 func (s *Service) DownloadBase(ctx context.Context) error {
 	if err := s.begin("resource-base"); err != nil {
 		return err
@@ -485,35 +434,34 @@ func (s *Service) DownloadBase(ctx context.Context) error {
 		s.fail(err)
 		return err
 	}
-	stageRoot := filepath.Join(s.updates, "base-resource-"+time.Now().Format("20060102-150405"))
+	stageRoot := filepath.Join(s.updates, "base-"+time.Now().Format("20060102-150405"))
 	cleanStaging(s.updates)
 	_ = os.RemoveAll(stageRoot)
 	if err := os.MkdirAll(stageRoot, 0o755); err != nil {
 		s.fail(err)
 		return err
 	}
-	zipPath := filepath.Join(stageRoot, "resource.zip")
-	s.setStatus(Status{Stage: StageDownload, Target: "resource-base", Message: "downloading base resource " + release.Tag, Version: release.Tag, Total: release.Size})
-	if err := s.download(ctx, client, withMirror(release.AssetURL, cfg.Update.Mirror), zipPath, release.Tag); err != nil {
+	zipPath := filepath.Join(stageRoot, "base.zip")
+	s.setStatus(Status{Stage: StageDownload, Target: "resource-base", Message: "downloading base package " + release.Tag, Version: release.Tag, Total: release.Size})
+	if err := s.download(ctx, client, withMirror(release.AssetURL, cfg.Update.Mirror), zipPath, release.Tag, release.Size); err != nil {
 		s.fail(err)
 		return err
 	}
-	s.setStatus(Status{Stage: StageExtracting, Target: "resource-base", Message: "extracting base resource", Progress: 0})
-	stagingResource := filepath.Join(stageRoot, "resource")
-	if err := extractResource(zipPath, stagingResource, s.setStatus); err != nil {
+	s.setStatus(Status{Stage: StageExtracting, Target: "resource-base", Message: "extracting base package", Progress: 0})
+	stagingBase := filepath.Join(stageRoot, "base")
+	if err := extractPackage(zipPath, stagingBase, s.setStatus); err != nil {
 		s.fail(err)
 		return err
 	}
-	if _, err := os.Stat(filepath.Join(stagingResource, "version.json")); err != nil {
-		err = errors.New("downloaded base resource has no version.json")
+	if err := validateBasePackage(stagingBase); err != nil {
 		s.fail(err)
 		return err
 	}
-	if err := writePending(s.updates, pendingUpdate{Kind: "resource-base", Staging: stagingResource, Version: release.Tag}); err != nil {
+	if err := writePending(s.updates, pendingUpdate{Kind: "base-package", Staging: stagingBase, Version: release.Tag}); err != nil {
 		s.fail(err)
 		return err
 	}
-	s.setStatus(Status{Stage: StageReady, Target: "resource-base", Message: "base resource " + release.Tag + " is ready; restart to apply", Version: release.Tag, Progress: 100, NeedsRestart: true})
+	s.setStatus(Status{Stage: StageReady, Target: "resource-base", Message: "base package " + release.Tag + " is ready; restart to apply", Version: release.Tag, Progress: 100, NeedsRestart: true})
 	return nil
 }
 
@@ -526,6 +474,11 @@ func (s *Service) DownloadOverlay(ctx context.Context) error {
 
 	cfg, err := config.Load()
 	if err != nil {
+		s.fail(err)
+		return err
+	}
+	if !s.baseInstalled() {
+		err = errors.New("base package is not installed; install the base package before applying an overlay")
 		s.fail(err)
 		return err
 	}
@@ -548,7 +501,7 @@ func (s *Service) DownloadOverlay(ctx context.Context) error {
 	}
 	zipPath := filepath.Join(stageRoot, "resource.zip")
 	s.setStatus(Status{Stage: StageDownload, Target: "resource-overlay", Message: "downloading MaaResource overlay " + version, Version: version})
-	if err := s.download(ctx, client, withMirror(resourceURL, cfg.Update.Mirror), zipPath, version); err != nil {
+	if err := s.download(ctx, client, withMirror(resourceURL, cfg.Update.Mirror), zipPath, version, 0); err != nil {
 		s.fail(err)
 		return err
 	}
@@ -585,7 +538,7 @@ func fetchOverlayCommit(ctx context.Context, client *http.Client) (ReleaseInfo, 
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return ReleaseInfo{}, fmt.Errorf("check overlay failed: HTTP %d", response.StatusCode)
+		return ReleaseInfo{}, apiStatusError("check overlay failed", response)
 	}
 	var payload struct {
 		SHA    string `json:"sha"`
@@ -635,39 +588,124 @@ func (s *Service) end() {
 	s.mu.Unlock()
 }
 
-func (s *Service) download(ctx context.Context, client *http.Client, url, destination, version string) error {
+// downloadHTTPError marks a response that cannot be fixed by retrying.
+type downloadHTTPError struct {
+	Status int
+}
+
+func (e *downloadHTTPError) Error() string {
+	return fmt.Sprintf("download failed: HTTP %d", e.Status)
+}
+
+// download fetches url to destination with resume and retry. Large MAA assets
+// often drop mid-transfer through proxies, so partial files are kept and
+// resumed; after two failures the remaining attempts bypass the proxy.
+func (s *Service) download(ctx context.Context, client *http.Client, url, destination, version string, expected int64) error {
+	const attempts = 4
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		attemptClient := client
+		if attempt > 2 {
+			attemptClient = &http.Client{Transport: newTransport(nil)}
+		}
+		err := s.downloadOnce(ctx, attemptClient, url, destination, version, expected)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		var statusErr *downloadHTTPError
+		if errors.As(err, &statusErr) && statusErr.Status < http.StatusInternalServerError {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt) * time.Second):
+		}
+	}
+	return lastErr
+}
+
+func (s *Service) downloadOnce(ctx context.Context, client *http.Client, url, destination, version string, expected int64) error {
+	offset := int64(0)
+	if info, err := os.Stat(destination); err == nil {
+		offset = info.Size()
+	}
+	if expected > 0 && offset >= expected {
+		// Size alone cannot prove the file is intact; download it again.
+		offset = 0
+	}
+
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
 	request.Header.Set("User-Agent", userAgent)
+	if offset > 0 {
+		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		return err
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed: HTTP %d", response.StatusCode)
+
+	switch response.StatusCode {
+	case http.StatusOK:
+		// The server ignored Range; start the file over.
+		offset = 0
+	case http.StatusPartialContent:
+	default:
+		return &downloadHTTPError{Status: response.StatusCode}
 	}
-	total := response.ContentLength
-	file, err := os.Create(destination)
+
+	flags := os.O_CREATE | os.O_WRONLY
+	if offset == 0 {
+		flags |= os.O_TRUNC
+	} else {
+		flags |= os.O_APPEND
+	}
+	file, err := os.OpenFile(destination, flags, 0o644)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
+	total := response.ContentLength
+	if total > 0 {
+		total += offset
+	}
 	progress := &progressWriter{
+		written: offset,
 		total:   total,
 		version: version,
 		status:  s.setStatus,
 	}
-	_, err = io.Copy(file, io.TeeReader(response.Body, progress))
-	if err != nil {
-		return err
+	_, copyErr := io.Copy(file, io.TeeReader(response.Body, progress))
+	closeErr := file.Close()
+	if copyErr != nil {
+		return copyErr
 	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if expected > 0 {
+		info, statErr := os.Stat(destination)
+		if statErr != nil {
+			return statErr
+		}
+		if info.Size() != expected {
+			return fmt.Errorf("download incomplete: %d of %d bytes", info.Size(), expected)
+		}
+	}
+	return s.completeDownload(total, progress.written, version)
+}
+
+func (s *Service) completeDownload(total, written int64, version string) error {
 	status := s.Status()
 	status.Progress = 100
-	status.Downloaded = progress.written
+	status.Downloaded = written
 	status.Total = total
 	status.Stage = StageDownload
 	status.Version = version
@@ -733,7 +771,7 @@ func fetchRelease(ctx context.Context, client *http.Client, api string, pattern 
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return ReleaseInfo{}, fmt.Errorf("check update failed: HTTP %d", response.StatusCode)
+		return ReleaseInfo{}, apiStatusError("check update failed", response)
 	}
 	var payload struct {
 		TagName     string `json:"tag_name"`
@@ -784,28 +822,102 @@ func withMirror(rawURL, mirror string) string {
 	return strings.TrimRight(mirror, "/") + "/" + rawURL
 }
 
-func httpClient(cfg config.AppConfig, overrideProxy string) (*http.Client, error) {
-	transport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+func newTransport(proxy func(*http.Request) (*url.URL, error)) *http.Transport {
+	return &http.Transport{
+		Proxy:                 proxy,
 		TLSHandshakeTimeout:   20 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,
 		IdleConnTimeout:       90 * time.Second,
 	}
+}
+
+// directFallbackTransport retries a request without the proxy when the proxy
+// answers with a GitHub API rate-limit response. Proxy exit IPs are often
+// shared by many users, so the unauthenticated 60-requests-per-hour quota can
+// be exhausted there while the machine's own route still has quota.
+type directFallbackTransport struct {
+	proxied http.RoundTripper
+	direct  http.RoundTripper
+}
+
+func (t *directFallbackTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := t.proxied.RoundTrip(request)
+	if err != nil || !isRateLimited(response) {
+		return response, err
+	}
+	// A request body can only be replayed when GetBody is available.
+	if request.Body != nil && request.GetBody == nil {
+		return response, nil
+	}
+	retry := request.Clone(request.Context())
+	if request.GetBody != nil {
+		body, bodyErr := request.GetBody()
+		if bodyErr != nil {
+			return response, nil
+		}
+		retry.Body = body
+	}
+	_ = response.Body.Close()
+	return t.direct.RoundTrip(retry)
+}
+
+// isRateLimited reports whether a response is GitHub's rate-limit rejection.
+func isRateLimited(response *http.Response) bool {
+	if response == nil {
+		return false
+	}
+	if response.StatusCode == http.StatusTooManyRequests {
+		return true
+	}
+	return response.StatusCode == http.StatusForbidden &&
+		response.Header.Get("X-RateLimit-Remaining") == "0"
+}
+
+// apiStatusError explains GitHub API failures, including the reset time of an
+// exhausted rate limit.
+func apiStatusError(prefix string, response *http.Response) error {
+	if isRateLimited(response) {
+		message := prefix + ": GitHub API rate limit exceeded (unauthenticated requests are limited to 60 per hour)"
+		if reset := response.Header.Get("X-RateLimit-Reset"); reset != "" {
+			if seconds, err := strconv.ParseInt(reset, 10, 64); err == nil {
+				message += "; the limit resets at " + time.Unix(seconds, 0).Local().Format("15:04")
+			}
+		}
+		return errors.New(message)
+	}
+	return fmt.Errorf("%s: HTTP %d", prefix, response.StatusCode)
+}
+
+func httpClient(cfg config.AppConfig, overrideProxy string) (*http.Client, error) {
+	return httpClientWithFallback(cfg, overrideProxy, true)
+}
+
+// httpClientWithFallback builds the client used by update checks and
+// downloads. Proxy tests disable the fallback so they report the proxy's own
+// result.
+func httpClientWithFallback(cfg config.AppConfig, overrideProxy string, allowDirectFallback bool) (*http.Client, error) {
 	rawProxy := strings.TrimSpace(overrideProxy)
 	if rawProxy == "" && cfg.Proxy.Enabled {
 		rawProxy = strings.TrimSpace(cfg.Proxy.URL)
 	}
-	if rawProxy != "" {
-		if !strings.Contains(rawProxy, "://") {
-			rawProxy = "http://" + rawProxy
-		}
-		proxyURL, err := url.Parse(rawProxy)
-		if err != nil || proxyURL.Host == "" {
-			return nil, fmt.Errorf("invalid proxy URL: %s", rawProxy)
-		}
-		transport.Proxy = http.ProxyURL(proxyURL)
+	if rawProxy == "" {
+		return &http.Client{Transport: newTransport(http.ProxyFromEnvironment)}, nil
 	}
-	return &http.Client{Transport: transport}, nil
+	if !strings.Contains(rawProxy, "://") {
+		rawProxy = "http://" + rawProxy
+	}
+	proxyURL, err := url.Parse(rawProxy)
+	if err != nil || proxyURL.Host == "" {
+		return nil, fmt.Errorf("invalid proxy URL: %s", rawProxy)
+	}
+	proxied := newTransport(http.ProxyURL(proxyURL))
+	if !allowDirectFallback {
+		return &http.Client{Transport: proxied}, nil
+	}
+	return &http.Client{Transport: &directFallbackTransport{
+		proxied: proxied,
+		direct:  newTransport(nil),
+	}}, nil
 }
 
 // NewHTTPClient builds the same proxy-aware client used by the updater.
@@ -816,7 +928,7 @@ func NewHTTPClient(cfg config.AppConfig) (*http.Client, error) {
 // TestProxy checks GitHub API reachability through a proxy URL.
 func TestProxy(ctx context.Context, proxyURL string) ProxyTestResult {
 	cfg, _ := config.Load()
-	client, err := httpClient(cfg, proxyURL)
+	client, err := httpClientWithFallback(cfg, proxyURL, false)
 	if err != nil {
 		return ProxyTestResult{OK: false, Message: err.Error()}
 	}
@@ -992,6 +1104,27 @@ func extractCore7z(archivePath, staging, version string, status func(Status)) er
 	return nil
 }
 
+// resourceArchiveRoot returns the prefix before the top-level resource/
+// directory. Per-client copies such as
+// resource/global/YoStarEN/resource/version.json also end in that suffix, so
+// the shortest prefix wins.
+func resourceArchiveRoot(files []*zip.File) (string, bool) {
+	root := ""
+	found := false
+	for _, entry := range files {
+		name := strings.ReplaceAll(entry.Name, "\\", "/")
+		if !strings.HasSuffix(name, "resource/version.json") {
+			continue
+		}
+		prefix := strings.TrimSuffix(name, "resource/version.json")
+		if !found || len(prefix) < len(root) {
+			root = prefix
+			found = true
+		}
+	}
+	return root, found
+}
+
 func extractResource(zipPath, staging string, status func(Status)) error {
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -999,15 +1132,7 @@ func extractResource(zipPath, staging string, status func(Status)) error {
 	}
 	defer reader.Close()
 
-	root := ""
-	found := false
-	for _, entry := range reader.File {
-		if strings.HasSuffix(entry.Name, "resource/version.json") {
-			root = strings.TrimSuffix(entry.Name, "resource/version.json")
-			found = true
-			break
-		}
-	}
+	root, found := resourceArchiveRoot(reader.File)
 	if !found {
 		return errors.New("resource/version.json was not found in the archive")
 	}
@@ -1035,6 +1160,61 @@ func extractResource(zipPath, staging string, status func(Status)) error {
 				Progress: index * 100 / max(total, 1),
 			})
 		}
+	}
+	return nil
+}
+
+// extractPackage extracts a whole MAA release archive into destination,
+// stripping the archive's optional top-level folder. The result keeps the
+// package layout: MaaCore.dll, MAA.exe, resource/ and the other files sit at
+// destination's root.
+func extractPackage(zipPath, destination string, status func(Status)) error {
+	reader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	root, found := resourceArchiveRoot(reader.File)
+	if !found {
+		return errors.New("resource/version.json was not found in the archive")
+	}
+	_ = os.RemoveAll(destination)
+	total := len(reader.File)
+	for index, entry := range reader.File {
+		if entry.FileInfo().IsDir() {
+			continue
+		}
+		name := strings.ReplaceAll(entry.Name, "\\", "/")
+		if !strings.HasPrefix(name, root) {
+			continue
+		}
+		relative := strings.TrimPrefix(name, root)
+		if relative == "" {
+			continue
+		}
+		if err := extractEntry(entry, destination, relative); err != nil {
+			return err
+		}
+		if index%200 == 0 {
+			status(Status{
+				Stage:    StageExtracting,
+				Message:  "extracting base package",
+				Progress: index * 100 / max(total, 1),
+			})
+		}
+	}
+	return nil
+}
+
+// validateBasePackage checks that a staged base directory can serve both as the
+// official core and as the shared resource tree.
+func validateBasePackage(dir string) error {
+	if _, err := os.Stat(filepath.Join(dir, "MaaCore.dll")); err != nil {
+		return errors.New("base package has no MaaCore.dll")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "resource", "version.json")); err != nil {
+		return errors.New("base package has no resource/version.json")
 	}
 	return nil
 }

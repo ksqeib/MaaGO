@@ -3,22 +3,26 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"MaaGO/internal/app"
 	"MaaGO/internal/apppath"
+	"MaaGO/internal/autostart"
 	"MaaGO/internal/config"
 	"MaaGO/internal/corelog"
 	"MaaGO/internal/lifecycle"
 	"MaaGO/internal/maa"
 	"MaaGO/internal/notify"
+	"MaaGO/internal/rdp"
 	"MaaGO/internal/runner"
 	"MaaGO/internal/scheduler"
 	"MaaGO/internal/tray"
@@ -76,6 +80,16 @@ func isDebugArg(args []string) bool {
 	return false
 }
 
+func isAutoStartArg(args []string) bool {
+	for _, arg := range args {
+		switch strings.ToLower(strings.TrimSpace(arg)) {
+		case "autostart", "-autostart", "--autostart", "/autostart":
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	logFile := setupLogging(isDebugArg(os.Args[1:]))
 	if logFile != nil {
@@ -92,6 +106,10 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Printf("startup: load config: %v", err)
+	}
+	autoStart := isAutoStartArg(os.Args[1:])
+	if err := autostart.Sync(cfg.Run.AutoStart); err != nil {
+		log.Printf("startup: sync autostart: %v", err)
 	}
 
 	sub, err := fs.Sub(assets, "frontend/dist")
@@ -120,6 +138,8 @@ func main() {
 	}
 
 	coreDir := maa.DefaultCoreDir()
+	installRoot := filepath.Dir(filepath.Clean(coreDir))
+	baseDir := filepath.Join(installRoot, "base")
 	if message, err := updater.MigrateLayout(coreDir); err != nil {
 		log.Printf("startup: migrate resource layout: %v", err)
 	} else if message != "" {
@@ -131,7 +151,19 @@ func main() {
 		log.Printf("startup: %s", message)
 	}
 
-	core := maa.New()
+	// Both cores read the shared resource tree under base/. The official core
+	// is the official MAA package root, whose MaaCore.dll sits next to
+	// resource/.
+	activeCoreDir := coreDir
+	if cfg.Core.Source == config.CoreOfficial {
+		if _, err := os.Stat(filepath.Join(baseDir, "MaaCore.dll")); err == nil {
+			activeCoreDir = baseDir
+		} else {
+			log.Printf("startup: official core requested but %s is missing; using the custom core", filepath.Join(baseDir, "MaaCore.dll"))
+		}
+	}
+	log.Printf("startup: core source %s (%s)", cfg.Core.Source, activeCoreDir)
+	core := maa.NewAtWithResource(activeCoreDir, baseDir)
 	if core.Available() {
 		userDir := filepath.Join(apppath.Root(), "core")
 		if err := core.SetUserDir(userDir); err != nil {
@@ -147,13 +179,92 @@ func main() {
 		log.Printf("startup: MaaCore unavailable: %v", core.Err())
 	}
 
-	taskRunner := runner.New(emit, nil, sendNotification, core, coreLogs)
+	var taskRunner *runner.Runner
+	runPostAction := func(state runner.RunState) {
+		if state.Demo {
+			return
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			if taskRunner != nil {
+				taskRunner.SystemLog("warn", fmt.Sprintf("结束后动作读取配置失败：%v", err))
+			}
+			return
+		}
+		if cfg.Run.PostAction != "exitArknights" {
+			return
+		}
+		if cfg.Run.PostActionSkipOnError && state.Status != runner.StatusSuccess {
+			if taskRunner != nil {
+				taskRunner.SystemLog("info", "结束后动作：本次运行未成功，按设置跳过关闭")
+			}
+			return
+		}
+		switch cfg.Connection.Mode {
+		case "rdp":
+			session := rdp.Current()
+			if session == nil || !session.Alive() {
+				if taskRunner != nil {
+					taskRunner.SystemLog("warn", "结束后动作：RDP 会话不在线，无法关闭远端明日方舟")
+				}
+				return
+			}
+			if taskRunner != nil {
+				taskRunner.SystemLog("info", "结束后动作：正在关闭远端明日方舟…")
+			}
+			if err := session.CloseArknights(); err != nil {
+				if taskRunner != nil {
+					taskRunner.SystemLog("error", fmt.Sprintf("结束后动作：关闭远端明日方舟失败：%v", err))
+				}
+				return
+			}
+			if taskRunner != nil {
+				taskRunner.SystemLog("success", "结束后动作：已发送关闭明日方舟命令")
+			}
+		case "win32":
+			if taskRunner != nil {
+				taskRunner.SystemLog("info", "结束后动作：正在关闭本机明日方舟…")
+			}
+			if err := exec.Command("taskkill", "/IM", "Arknights.exe", "/F").Run(); err != nil {
+				if taskRunner != nil {
+					taskRunner.SystemLog("warn", fmt.Sprintf("结束后动作：关闭本机明日方舟失败：%v", err))
+				}
+				return
+			}
+			if taskRunner != nil {
+				taskRunner.SystemLog("success", "结束后动作：已关闭本机明日方舟")
+			}
+		default:
+			if taskRunner != nil {
+				taskRunner.SystemLog("warn", "结束后动作：关闭明日方舟仅适用于 PC / RDP 连接")
+			}
+		}
+	}
+	updates := updater.New(coreDir, emit)
+	taskRunner = runner.New(emit, runPostAction, sendNotification, core, coreLogs)
+	taskRunner.SetUpdateCheck(func(ctx context.Context, options runner.UpdateCheckOptions) (runner.UpdateCheckResult, error) {
+		result, err := updates.CheckForQueueTask(ctx, updater.QueueUpdateOptions{
+			Core:     options.Core,
+			Base:     options.Base,
+			Overlay:  options.Overlay,
+			Download: options.Download,
+		})
+		return runner.UpdateCheckResult{
+			CoreCurrent:    result.CoreCurrent,
+			CoreLatest:     result.CoreLatest,
+			BaseCurrent:    result.BaseCurrent,
+			BaseLatest:     result.BaseLatest,
+			OverlayCurrent: result.OverlayCurrent,
+			OverlayLatest:  result.OverlayLatest,
+			Staged:         result.Staged,
+			Message:        result.Message,
+		}, err
+	})
 	defer taskRunner.Close()
 
 	taskScheduler := scheduler.New(taskRunner, emit, sendNotification)
 	taskScheduler.Update(cfg.Schedule)
 
-	updates := updater.New(coreDir, emit)
 	service := app.NewService(taskRunner, taskScheduler, emit, core, updates)
 
 	wailsApp := application.New(application.Options{
@@ -193,6 +304,7 @@ func main() {
 		BackgroundColour: application.RGBA{Red: 248, Green: 250, Blue: 252, Alpha: 255},
 		URL:              "/",
 		EnableFileDrop:   true,
+		Hidden:           autoStart,
 	})
 	lifecycle.SetWindow(window)
 
@@ -251,7 +363,7 @@ func main() {
 		}
 	})
 
-	if cfg.WindowMaximised {
+	if cfg.WindowMaximised && !autoStart {
 		window.Maximise()
 	}
 

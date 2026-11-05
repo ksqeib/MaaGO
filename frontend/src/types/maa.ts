@@ -7,7 +7,8 @@ export type TaskType =
   | "infrast"
   | "recruit"
   | "mall"
-  | "award";
+  | "award"
+  | "update";
 
 export type RunStatus =
   | "idle"
@@ -47,6 +48,7 @@ export interface RDPConfig {
   domain: string;
   width: number;
   height: number;
+  gamePath: string;
 }
 
 export interface ConnectionConfig {
@@ -67,6 +69,7 @@ export interface RunConfig {
   blockSleep: boolean;
   keepScreenOn: boolean;
   runDurationMinutes: number;
+  autoStart: boolean;
   postAction: string;
   postActionOnlyWhenNoOther: boolean;
   postActionSkipOnError: boolean;
@@ -111,6 +114,12 @@ export interface PerformanceConfig {
   gpuDevice: string;
 }
 
+export type CoreSource = "custom" | "official";
+
+export interface CoreConfig {
+  source: CoreSource;
+}
+
 export interface LastRun {
   startedAt: string;
   finishedAt: string;
@@ -138,6 +147,7 @@ export interface AppConfig {
   proxy: ProxyConfig;
   update: UpdateConfig;
   performance: PerformanceConfig;
+  core: CoreConfig;
   tasks: TaskConfig[];
   lastRun: LastRun;
 }
@@ -200,6 +210,9 @@ export interface CoreStatus {
   message: string;
   demo: boolean;
   version?: string;
+  source?: CoreSource;
+  configuredSource?: CoreSource;
+  officialAvailable?: boolean;
 }
 
 export interface CoreRuntimeFileStatus {
@@ -290,6 +303,7 @@ export interface UpdateStatus {
 }
 
 export interface ResourceVersions {
+  core: string;
   base: string;
   overlay: string;
   updated: string;

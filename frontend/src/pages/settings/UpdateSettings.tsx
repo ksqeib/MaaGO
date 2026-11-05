@@ -119,6 +119,17 @@ export const UpdateSettings = () => {
   const updateUpdate = (patch: Partial<typeof config.update>) => {
     updateConfig((previous) => ({ ...previous, update: { ...previous.update, ...patch } }));
   };
+  const updateCore = (patch: Partial<typeof config.core>) => {
+    updateConfig((previous) => ({
+      ...previous,
+      core: { source: patch.source ?? previous.core?.source ?? "custom" },
+    }));
+  };
+
+  const coreSource = config.core?.source ?? "custom";
+  const officialSelected = coreSource === "official";
+  const officialMissing = officialSelected && core?.officialAvailable === false;
+  const coreSourcePending = Boolean(core && core.source && core.source !== coreSource);
 
   const latestLine = (release: ReleaseInfo | null) => {
     if (!release) return null;
@@ -133,6 +144,72 @@ export const UpdateSettings = () => {
 
   return (
     <div className="flex flex-col gap-4">
+      <SectionCard
+        description={t("settings.update.core_source_hint")}
+        title={t("settings.update.core_source_title")}
+      >
+        <div className="grid gap-2 py-3 sm:grid-cols-2">
+          <button
+            className={cn(
+              "rounded-2xl border px-4 py-3 text-left transition-colors",
+              coreSource === "custom"
+                ? "border-brand-500/60 bg-brand-500/10"
+                : "border-border hover:bg-surface-secondary/60",
+            )}
+            onClick={() => updateCore({ source: "custom" })}
+            type="button"
+          >
+            <span className="block text-sm font-semibold">
+              {t("settings.update.core_source_custom")}
+            </span>
+            <span className="mt-1 block text-[11px] leading-relaxed text-muted">
+              {t("settings.update.core_source_custom_hint")}
+            </span>
+          </button>
+          <button
+            className={cn(
+              "rounded-2xl border px-4 py-3 text-left transition-colors",
+              coreSource === "official"
+                ? "border-brand-500/60 bg-brand-500/10"
+                : "border-border hover:bg-surface-secondary/60",
+            )}
+            onClick={() => updateCore({ source: "official" })}
+            type="button"
+          >
+            <span className="block text-sm font-semibold">
+              {t("settings.update.core_source_official")}
+            </span>
+            <span className="mt-1 block text-[11px] leading-relaxed text-muted">
+              {t("settings.update.core_source_official_hint")}
+            </span>
+          </button>
+        </div>
+        <SettingRow
+          control={
+            <span className="rounded-full bg-surface-secondary px-3 py-1 text-[11px] font-medium">
+              {core?.version || "—"}
+            </span>
+          }
+          description={t(
+            core?.source === "official"
+              ? "settings.update.core_source_active_official"
+              : "settings.update.core_source_active_custom",
+            { version: core?.version || "—" },
+          )}
+          title={t("settings.update.core_source_active")}
+        />
+        {officialMissing && (
+          <p className="pb-3 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+            {t("settings.update.core_source_missing_base")}
+          </p>
+        )}
+        {!officialMissing && coreSourcePending && (
+          <p className="pb-3 text-[11px] leading-relaxed text-muted">
+            {t("settings.update.core_source_restart")}
+          </p>
+        )}
+      </SectionCard>
+
       <SectionCard
         description={t("settings.update.note")}
         title={t("settings.update.proxy_title")}

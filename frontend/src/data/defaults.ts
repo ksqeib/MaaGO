@@ -2,7 +2,7 @@ import { defaultTasks } from "@/data/tasks";
 import type { AppConfig } from "@/types/maa";
 
 export const DEFAULT_CONFIG: AppConfig = {
-  configVersion: 11,
+  configVersion: 12,
   windowWidth: 1100,
   windowHeight: 720,
   windowMaximised: false,
@@ -35,6 +35,7 @@ export const DEFAULT_CONFIG: AppConfig = {
       domain: "",
       width: 1920,
       height: 1080,
+      gamePath: "D:\\Hypergryph Launcher\\games\\Arknights\\Arknights.exe",
     },
   },
   run: {
@@ -42,6 +43,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     blockSleep: true,
     keepScreenOn: false,
     runDurationMinutes: 0,
+    autoStart: false,
     postAction: "none",
     postActionOnlyWhenNoOther: false,
     postActionSkipOnError: false,
@@ -79,6 +81,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   performance: {
     gpuOcr: false,
     gpuDevice: "0",
+  },
+  core: {
+    source: "custom",
   },
   tasks: defaultTasks(),
   lastRun: {

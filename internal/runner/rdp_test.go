@@ -47,7 +47,7 @@ func TestRealRDPRun(t *testing.T) {
 			Type:    config.TaskStartUp,
 			Enabled: true,
 			Options: map[string]any{
-				"launchClient": false,
+				"launchClient": true,
 				"clientType":   "Official",
 			},
 		}
@@ -109,6 +109,13 @@ func TestRealRDPRun(t *testing.T) {
 	}
 
 	r := New(nil, nil, nil, core, coreLogs)
+	if os.Getenv("MAAGO_TEST_RDP_POST_ACTION") != "" {
+		r = New(nil, func(state RunState) {
+			if session := rdp.Current(); session != nil {
+				_ = session.CloseArknights()
+			}
+		}, nil, core, coreLogs)
+	}
 	defer r.Close()
 	if err := r.Start(); err != nil {
 		t.Fatal(err)
@@ -122,6 +129,7 @@ func TestRealRDPRun(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+	time.Sleep(12 * time.Second)
 	state := r.State()
 	t.Logf("final state: %s · %s · %d/%d", state.Status, state.Message, state.Completed, state.Total)
 	if session := rdp.Current(); session != nil {

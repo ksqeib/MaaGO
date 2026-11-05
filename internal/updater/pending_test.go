@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestMigrateLayoutMovesResource(t *testing.T) {
+func TestMigrateLayoutMovesLegacyCoreResource(t *testing.T) {
 	root := t.TempDir()
 	coreDir := filepath.Join(root, "core")
 	mustWrite(t, filepath.Join(coreDir, "MaaCore.dll"), "core")
@@ -19,7 +19,7 @@ func TestMigrateLayoutMovesResource(t *testing.T) {
 	if message == "" {
 		t.Fatal("expected a migration message")
 	}
-	if data := mustRead(t, filepath.Join(root, "resource", "version.json")); data != "old" {
+	if data := mustRead(t, filepath.Join(root, "base", "resource", "version.json")); data != "old" {
 		t.Fatalf("resource not moved: %q", data)
 	}
 	if _, err := os.Stat(filepath.Join(coreDir, "resource")); !os.IsNotExist(err) {
@@ -35,6 +35,26 @@ func TestMigrateLayoutMovesResource(t *testing.T) {
 	}
 }
 
+func TestMigrateLayoutMovesRootResourceToBase(t *testing.T) {
+	root := t.TempDir()
+	coreDir := filepath.Join(root, "core")
+	mustWrite(t, filepath.Join(root, "resource", "version.json"), "old")
+
+	message, err := MigrateLayout(coreDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message == "" {
+		t.Fatal("expected a migration message")
+	}
+	if data := mustRead(t, filepath.Join(root, "base", "resource", "version.json")); data != "old" {
+		t.Fatalf("resource not moved: %q", data)
+	}
+	if _, err := os.Stat(filepath.Join(root, "resource")); !os.IsNotExist(err) {
+		t.Fatal("root resource directory should be gone")
+	}
+}
+
 func TestApplyPendingCoreSwapsAndBacksUp(t *testing.T) {
 	root := t.TempDir()
 	coreDir := filepath.Join(root, "core")
@@ -42,7 +62,7 @@ func TestApplyPendingCoreSwapsAndBacksUp(t *testing.T) {
 	staging := filepath.Join(updatesDir, "core-v1", "core")
 
 	mustWrite(t, filepath.Join(coreDir, "MaaCore.dll"), "old")
-	mustWrite(t, filepath.Join(root, "resource", "version.json"), "resource")
+	mustWrite(t, filepath.Join(root, "base", "resource", "version.json"), "resource")
 	mustWrite(t, filepath.Join(staging, "MaaCore.dll"), "new")
 	mustWrite(t, filepath.Join(staging, "MaaUtils.dll"), "utils")
 	if err := writePending(updatesDir, pendingUpdate{Kind: "core", Staging: staging, Version: "v1"}); err != nil {
@@ -62,8 +82,8 @@ func TestApplyPendingCoreSwapsAndBacksUp(t *testing.T) {
 	if data := mustRead(t, filepath.Join(coreDir+".backup", "MaaCore.dll")); data != "old" {
 		t.Fatalf("backup was not created: %q", data)
 	}
-	if data := mustRead(t, filepath.Join(root, "resource", "version.json")); data != "resource" {
-		t.Fatalf("sibling resource should be untouched: %q", data)
+	if data := mustRead(t, filepath.Join(root, "base", "resource", "version.json")); data != "resource" {
+		t.Fatalf("shared resource should be untouched: %q", data)
 	}
 	if _, err := os.Stat(filepath.Join(updatesDir, "pending.json")); !os.IsNotExist(err) {
 		t.Fatal("pending marker should be removed")
@@ -76,7 +96,7 @@ func TestApplyPendingResourceMerges(t *testing.T) {
 	updatesDir := filepath.Join(root, ".maago-updates")
 	staging := filepath.Join(updatesDir, "resource-1", "resource")
 
-	mustWrite(t, filepath.Join(root, "resource", "version.json"), "old")
+	mustWrite(t, filepath.Join(root, "base", "resource", "version.json"), "old")
 	mustWrite(t, filepath.Join(staging, "version.json"), "new")
 	mustWrite(t, filepath.Join(staging, "tasks", "new.json"), "task")
 	if err := writePending(updatesDir, pendingUpdate{Kind: "resource", Staging: staging}); err != nil {
@@ -86,10 +106,10 @@ func TestApplyPendingResourceMerges(t *testing.T) {
 	if _, err := ApplyPending(coreDir); err != nil {
 		t.Fatal(err)
 	}
-	if data := mustRead(t, filepath.Join(root, "resource", "version.json")); data != "new" {
+	if data := mustRead(t, filepath.Join(root, "base", "resource", "version.json")); data != "new" {
 		t.Fatalf("resource was not merged: %q", data)
 	}
-	if data := mustRead(t, filepath.Join(root, "resource", "tasks", "new.json")); data != "task" {
+	if data := mustRead(t, filepath.Join(root, "base", "resource", "tasks", "new.json")); data != "task" {
 		t.Fatalf("new resource file missing: %q", data)
 	}
 }
@@ -109,7 +129,7 @@ func TestApplyPendingResourceCreatesDirectory(t *testing.T) {
 	if _, err := ApplyPending(coreDir); err != nil {
 		t.Fatal(err)
 	}
-	if data := mustRead(t, filepath.Join(root, "resource", "version.json")); data != "new" {
+	if data := mustRead(t, filepath.Join(root, "base", "resource", "version.json")); data != "new" {
 		t.Fatalf("base resource was not installed: %q", data)
 	}
 }

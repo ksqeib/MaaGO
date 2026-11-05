@@ -18,7 +18,10 @@ import (
 )
 
 // ConfigVersion is bumped when the on-disk shape changes.
-const ConfigVersion = 11
+const ConfigVersion = 12
+
+// DefaultRDPGamePath is the official CN launcher's default install path.
+const DefaultRDPGamePath = `D:\Hypergryph Launcher\games\Arknights\Arknights.exe`
 
 var (
 	mu       sync.RWMutex
@@ -53,6 +56,7 @@ const (
 	TaskRecruit TaskType = "recruit"
 	TaskMall    TaskType = "mall"
 	TaskAward   TaskType = "award"
+	TaskUpdate  TaskType = "update"
 )
 
 // ValidTaskTypes is the set of tasks the trimmed UI supports.
@@ -63,6 +67,7 @@ var ValidTaskTypes = []TaskType{
 	TaskRecruit,
 	TaskMall,
 	TaskAward,
+	TaskUpdate,
 }
 
 // IsValidTaskType reports whether t is a supported task type.
@@ -107,6 +112,7 @@ type RDPConfig struct {
 	Domain   string `json:"domain"`
 	Width    int    `json:"width"`
 	Height   int    `json:"height"`
+	GamePath string `json:"gamePath"`
 }
 
 type ConnectionConfig struct {
@@ -128,6 +134,7 @@ type RunConfig struct {
 	BlockSleep                bool   `json:"blockSleep"`
 	KeepScreenOn              bool   `json:"keepScreenOn"`
 	RunDurationMinutes        int    `json:"runDurationMinutes"`
+	AutoStart                 bool   `json:"autoStart"`
 	PostAction                string `json:"postAction"`
 	PostActionOnlyWhenNoOther bool   `json:"postActionOnlyWhenNoOther"`
 	PostActionSkipOnError     bool   `json:"postActionSkipOnError"`
@@ -186,6 +193,18 @@ type PerformanceConfig struct {
 	GPUDevice string `json:"gpuDevice"`
 }
 
+// Core sources select which MaaCore build is loaded. Both builds share the
+// resource tree under base/resource.
+const (
+	CoreCustom   = "custom"
+	CoreOfficial = "official"
+)
+
+// CoreConfig controls the active MaaCore build.
+type CoreConfig struct {
+	Source string `json:"source"` // custom | official
+}
+
 // LastRun records the result of the most recent queue run.
 type LastRun struct {
 	StartedAt       string `json:"startedAt"`
@@ -215,6 +234,7 @@ type AppConfig struct {
 	Proxy           ProxyConfig        `json:"proxy"`
 	Update          UpdateConfig       `json:"update"`
 	Performance     PerformanceConfig  `json:"performance"`
+	Core            CoreConfig         `json:"core"`
 	Tasks           []TaskConfig       `json:"tasks"`
 	LastRun         LastRun            `json:"lastRun"`
 }
@@ -245,15 +265,17 @@ func Default() AppConfig {
 				Keyboard:    "SendMessage",
 			},
 			RDP: RDPConfig{
-				Port:   3389,
-				Width:  1920,
-				Height: 1080,
+				Port:     3389,
+				Width:    1920,
+				Height:   1080,
+				GamePath: DefaultRDPGamePath,
 			},
 		},
 		Run: RunConfig{
 			ClientType:   "Official",
 			BlockSleep:   true,
 			KeepScreenOn: false,
+			AutoStart:    false,
 			PostAction:   "none",
 		},
 		Schedule: ScheduleConfig{
@@ -284,6 +306,9 @@ func Default() AppConfig {
 		Performance: PerformanceConfig{
 			GPUOCR:    false,
 			GPUDevice: "0",
+		},
+		Core: CoreConfig{
+			Source: CoreCustom,
 		},
 		Tasks: defaultTasks(),
 		LastRun: LastRun{
@@ -348,6 +373,13 @@ func defaultTasks() []TaskConfig {
 			"specialAccess": true,
 			"signIn":        true,
 			"freeGacha":     false,
+		}},
+		{ID: "task-update", Type: TaskUpdate, Enabled: false, Options: map[string]any{
+			"checkCore":    true,
+			"checkBase":    true,
+			"checkOverlay": true,
+			"download":     true,
+			"stopOnUpdate": true,
 		}},
 	}
 }
@@ -488,6 +520,10 @@ func (c *AppConfig) Normalize() {
 	c.Connection.RDP.Host = strings.TrimSpace(c.Connection.RDP.Host)
 	c.Connection.RDP.Username = strings.TrimSpace(c.Connection.RDP.Username)
 	c.Connection.RDP.Domain = strings.TrimSpace(c.Connection.RDP.Domain)
+	c.Connection.RDP.GamePath = strings.TrimSpace(c.Connection.RDP.GamePath)
+	if c.Connection.RDP.GamePath == "" {
+		c.Connection.RDP.GamePath = DefaultRDPGamePath
+	}
 	if c.Connection.RDP.Port <= 0 || c.Connection.RDP.Port > 65535 {
 		c.Connection.RDP.Port = 3389
 	}
@@ -502,6 +538,11 @@ func (c *AppConfig) Normalize() {
 		c.Run.ClientType = "Official"
 	}
 	if c.Run.PostAction == "" {
+		c.Run.PostAction = "none"
+	}
+	switch c.Run.PostAction {
+	case "none", "exitArknights":
+	default:
 		c.Run.PostAction = "none"
 	}
 	if c.Run.RunDurationMinutes < 0 {
@@ -537,6 +578,10 @@ func (c *AppConfig) Normalize() {
 	if c.Performance.GPUDevice == "" {
 		c.Performance.GPUDevice = "0"
 	}
+	c.Core.Source = strings.TrimSpace(c.Core.Source)
+	if c.Core.Source != CoreOfficial {
+		c.Core.Source = CoreCustom
+	}
 
 	seen := map[string]struct{}{}
 	tasks := make([]TaskConfig, 0, len(c.Tasks))
@@ -557,6 +602,27 @@ func (c *AppConfig) Normalize() {
 		tasks = append(tasks, task)
 	}
 	c.Tasks = tasks
+	hasUpdate := false
+	for _, task := range c.Tasks {
+		if task.Type == TaskUpdate {
+			hasUpdate = true
+			break
+		}
+	}
+	if !hasUpdate {
+		c.Tasks = append(c.Tasks, TaskConfig{
+			ID:      "task-update",
+			Type:    TaskUpdate,
+			Enabled: false,
+			Options: map[string]any{
+				"checkCore":    true,
+				"checkBase":    true,
+				"checkOverlay": true,
+				"download":     true,
+				"stopOnUpdate": true,
+			},
+		})
+	}
 
 	if c.LastRun.Status == "" {
 		c.LastRun.Status = "idle"

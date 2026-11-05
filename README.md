@@ -2,7 +2,7 @@
 
 MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArknights）桌面客户端，参考 LeviLauncher 的界面结构与视觉风格。
 
-已通过 MaaCore 的 C API（`AsstCaller`）接入真实核心；MaaCore 与依赖 DLL、ADB 放在独立的 `core/` 目录，资源单独放在 `resource/`，不会散落在程序根目录。
+已通过 MaaCore 的 C API（`AsstCaller`）接入真实核心；自定义 MaaCore 与依赖 DLL、ADB 放在 `core/`，官方 MAA 完整包和共用资源放在 `base/`，不会散落在程序根目录。
 
 ## 文档
 
@@ -24,19 +24,22 @@ MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArkn
 - 日志页：级别过滤、搜索、自动滚动、清空、打开日志目录 / 核心日志 / 失败截图
 - 设置页
   - 连接：ADB 地址、自动检测、模拟器端口扫描、ADB 路径、触控模式、截图增强；Win32 窗口模式（PC 客户端、截图/鼠标/键盘方式）；RDP 远程机器模式（NLA 连接、本机代理预览窗、截图/输入转发）
-  - 运行：客户端类型、阻止休眠、屏幕常亮、运行时长上限
+  - 运行：客户端类型、阻止休眠、屏幕常亮、开机启动、运行时长上限
   - 性能：OCR 推理设备（CPU / GPU DirectML）、GPU 设备号，重启生效
   - 定时：可添加多个每天执行时间点，每个时间点单独设置星期和强制重启，支持开始前通知
   - 通知：Windows 系统通知（完成/出错/定时前）
   - 外观：浅色 / 深色 / 跟随系统、简体中文 / English
   - 托盘：最小化到托盘、关闭到托盘
+  - 任务：RDP 模式下开始唤醒可自动启动远端 PC 客户端，结束后可关闭明日方舟
+  - 资源更新任务：检查 MaaCore、资源底包、资源覆盖；可自动暂存一项，重启后安装
   - 更新：应用内代理、检查更新、下载核心、前置运行库修复、资源底包、资源覆盖、重启安装
+  - 核心来源：自定义核心 / 官方核心（随底包更新）可切换，两套核心共用资源
 - 系统托盘：显示窗口、开始任务、停止任务、退出
 - 独立设计的界面与图标，不使用 MAA 官方 logo
 
 ## MaaCore 目录
 
-MaaCore 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 SDK 发布包，资源和 core 分开：
+MaaCore 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 SDK 发布包，资源和 core 分开。新版 SDK 的 `deps.json` 会把运行库放在单独的 `MaaCore-runtime-windows-x64-v1.zip` 里，MaaGO 会按 `deps.json` 的 URL/SHA-256 下载并校验。
 
 ```
 core/                  # 只放 SDK 二进制
@@ -52,12 +55,17 @@ core/                  # 只放 SDK 二进制
     ├── AdbWinApi.dll
     └── AdbWinUsbApi.dll
 
-resource/              # MAA 资源
-├── version.json
-├── tasks/
-├── template/
-├── onnx/
-└── global/
+base/                  # 官方 MAA 完整包（底包 + 官方核心）
+├── MAA.exe
+├── MaaCore.dll        # 官方核心，可在设置里切换使用
+├── MaaUtils.dll
+├── .maago-base-version
+└── resource/          # 两套核心共用的资源（底包 + 覆盖）
+    ├── version.json
+    ├── tasks/
+    ├── template/
+    ├── onnx/
+    └── global/
 ```
 
 详细说明见 [core-runtime.zh-CN.md](./docs/core-runtime.zh-CN.md)。
@@ -68,7 +76,7 @@ resource/              # MAA 资源
 powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
   -Source "D:\path\to\MaaCore-sdk" `
   -AdbSource "D:\path\to\platform-tools" `
-  -Version "v0.1.1"
+  -Version "v0.1.5"
 ```
 
 从 GitHub 下载：
@@ -79,13 +87,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
 
 查找顺序：`%MAAGO_CORE_DIR%` → `<exe>/core` → `<exe>/../core` → `<cwd>/core`。
 `MaaCore.dll` 使用 `LOAD_WITH_ALTERED_SEARCH_PATH` 加载，依赖 DLL 会从 `core/` 解析。
-资源固定从 core 同级目录的 `resource/` 加载；旧的 `core/resource/` 会在启动时自动迁移。
+两套核心都从 `base/resource/` 加载资源；旧的 `resource/` 和 `core/resource/` 会在启动时自动迁移过去。自定义核心放在 `core/`，官方核心就是 `base/` 里的 `MaaCore.dll`，切换后重启生效。
 
 如果 `core/` 不存在，程序会自动降级为界面演示模式，并在仪表盘/设置中提示。
 
 ## 使用真实核心
 
-1. 确认 `core/MaaCore.dll` 与 `resource/version.json` 存在。
+1. 确认 `core/MaaCore.dll` 与 `base/resource/version.json` 存在。
 2. 在“设置 → 连接”填写模拟器 ADB 地址，例如 `127.0.0.1:16384`；留空时会自动扫描常见模拟器端口，并读取 `adb devices` 的结果。
 3. 确认 ADB 可用：`core/adb/adb.exe devices` 能看到设备。
 4. 回到仪表盘点击“一键开始”。
@@ -96,7 +104,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
 
 “测试连接”已改为逐项诊断，不会只给一个“截图失败”：
 
-1. `MaaCore`：DLL 与 `resource/` 是否加载
+1. `MaaCore`：DLL 与 `base/resource/` 是否加载
 2. `ADB`：定位 `adb.exe`
 3. `ADB 设备`：`adb devices`，必要时先 `adb connect`
 4. `MaaCore 连接`：`AsstConnect`
@@ -131,6 +139,9 @@ PC 模式和 ADB 不同：MAA 的模板是按固定 UI 尺寸截取的，而 PC 
 8. **RDP 额外注意**
    - 远端桌面和游戏保持 16:9 全屏，MaaGO 会话保持连接。
    - 不要同时用 mstsc 登录同一个远端会话，否则会接管并断开 MaaGO 的 RDP 连接。
+9. **开始唤醒 / 结束动作**
+   - “开始唤醒”任务里的“自动启动客户端”开启后，MaaGO 会在 RDP 模式启动远端游戏；需要先在“设置 → 连接 → RDP”填写正确的远端游戏路径。
+   - “设置 → 运行 → 完成后动作”当前只支持“关闭明日方舟”；队列结束后会在远端执行关闭。
 
 > 如果改完 UI 缩放 100% 后仍有个别界面失败，再按“PC 模板差异”排查：PC 主界面是鼠标布局，不能直接套用全部 Android 模板。
 
@@ -209,9 +220,10 @@ wails3 task dev
   - 任务失败时追加“最后识别失败”和“失败截图”路径，日志页可直接打开截图目录
 - 诊断截图：`%APPDATA%\MaaGO\cache\diagnostics\`
 - MaaCore 失败截图：`%APPDATA%\MaaGO\core\debug\interface\`
-- 资源目录：`<程序目录>\resource\`
+- 资源目录：`<程序目录>\base\resource\`
+- 官方包（底包 + 官方核心）：`<程序目录>\base\`
 - 更新暂存：`<程序目录>\.maago-updates\`
-- 旧核心备份：`<程序目录>\core.backup\`
+- 旧自定义核心备份：`<程序目录>\core.backup\`
 
 > 游戏大版本更新会改动主界面模板，而模板随 MaaCore/资源发布、不随动态数据更新。遇到整队任务无法识别时，请更新到最新的 MaaCore SDK 或完整资源。
 
@@ -220,8 +232,8 @@ wails3 task dev
 ```
 .
 ├── build/                  # Wails 构建配置、图标、Windows 清单
-├── core/                   # MaaCore SDK 二进制（DLL / adb，不入库）
-├── resource/               # MAA 资源（不入库）
+├── core/                   # 自定义 MaaCore SDK 二进制（DLL / adb，不入库）
+├── base/                   # 官方 MAA 完整包 + 共用资源（不入库）
 ├── frontend/
 │   └── src/
 │       ├── assets/locales/ # zh_CN / en_US
@@ -252,5 +264,5 @@ wails3 task dev
 
 - 自动战斗（Copilot）
 - 小工具（公招识别、仓库识别、干员识别）
-- 完成后动作（锁屏/睡眠/关机等，仅保存设置）
+- 完成后动作：当前仅支持结束后关闭明日方舟；锁屏/睡眠/关机等仍未实现
 - 自动更新与安装包

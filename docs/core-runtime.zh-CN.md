@@ -1,6 +1,6 @@
 # MaaCore 运行目录说明
 
-本文说明 `core/` 和 `resource/` 的职责，以及从 `ksqeib/MaaCore` SDK 和 MAA 资源中应该复制什么、不要复制什么。
+本文说明 `core/`、`base/` 和 `base/resource/` 的职责，以及从 `ksqeib/MaaCore` SDK 和 MAA 官方包中应该复制什么、不要复制什么。
 
 ## 1. 目录总览
 
@@ -18,16 +18,21 @@ core/                          # 只放 MaaCore SDK 二进制
     ├── AdbWinApi.dll
     └── AdbWinUsbApi.dll
 
-resource/                      # MAA 资源，与 core 分开
-├── version.json
-├── tasks/
-├── template/
-├── onnx/
-├── global/
-└── ...
+base/                          # 官方 MAA 完整包（底包 + 官方核心）
+├── MAA.exe
+├── MaaCore.dll                # 官方核心，可在设置里切换
+├── MaaUtils.dll
+├── .maago-base-version
+└── resource/                  # 两套核心共用的 MAA 资源
+    ├── version.json
+    ├── tasks/
+    ├── template/
+    ├── onnx/
+    ├── global/
+    └── ...
 ```
 
-所有文件都是 x64。MaaGO 通过 `LoadLibraryEx(..., LOAD_WITH_ALTERED_SEARCH_PATH)` 加载 `core/MaaCore.dll`，依赖 DLL 会优先从 `core/` 解析；资源则通过 `AsstLoadResource` 加载程序目录下的 `resource/`。
+所有文件都是 x64。MaaGO 通过 `LoadLibraryEx(..., LOAD_WITH_ALTERED_SEARCH_PATH)` 加载 `MaaCore.dll`，依赖 DLL 会优先从核心目录解析；资源则通过 `AsstLoadResource` 加载 `base/`（它包含 `resource/`）。自定义核心在 `core/`，官方核心在 `base/`，两者共用 `base/resource/`。
 
 ## 2. 必需文件
 
@@ -55,28 +60,30 @@ PP-OCR 推理组件。
 
 OpenCV 的 MAA 定制版，用于图像处理、模板匹配。
 
-### `resource/`（与 core 同级）
+### `base/resource/`（两套核心共用）
 
 MAA 的任务定义、模板图、OCR 模型、关卡数据、活动数据、多服务器覆盖资源等。没有它，MaaCore 会初始化失败或任务无法识别。它不在 `core/` 里面：
 
 ```text
 MaaGO/
-├── core/        # MaaCore SDK
-└── resource/    # MAA 资源
+├── core/            # 自定义 MaaCore SDK
+└── base/            # 官方 MAA 完整包
+    ├── MaaCore.dll  # 官方核心（可选）
+    └── resource/    # 共用资源
 ```
 
 关键子目录：
 
 | 路径 | 作用 |
 |---|---|
-| `resource/tasks/` | 任务定义和识别流程 |
-| `resource/template/` | 界面模板图 |
-| `resource/onnx/` | 干员/OCR 模型 |
-| `resource/global/` | 外服覆盖资源 |
-| `resource/platform_diff/` | 平台差异资源 |
-| `resource/version.json` | 动态资源版本 |
+| `base/resource/tasks/` | 任务定义和识别流程 |
+| `base/resource/template/` | 界面模板图 |
+| `base/resource/onnx/` | 干员/OCR 模型 |
+| `base/resource/global/` | 外服覆盖资源 |
+| `base/resource/platform_diff/` | 平台差异资源 |
+| `base/resource/version.json` | 动态资源版本 |
 
-`resource/version.json` 必须存在，连接诊断和启动检查会用它判断基础资源是否完整。
+`base/resource/version.json` 必须存在，连接诊断和启动检查会用它判断基础资源是否完整。
 
 ## 3. ADB（强烈建议）
 
@@ -128,19 +135,19 @@ MaaGO 会把 `asst.log` 的新增内容镜像到：
 | `include/` | 集成头文件，运行不需要 |
 | `MaaCore.pdb`、`MaaUtils.pdb` | 调试符号 |
 | `README.md`、`LICENSE.md` | 文档 |
-| `MAA.exe`、`MAA.dll` | 官方 WPF 前端，MaaGO 不使用 |
-| `resource/` | 应放到程序目录的 `resource/`，不要放进 `core/` |
+| `MAA.exe`、`MAA.dll` | 官方 WPF 前端，属于 `base/`，不要放进 `core/` |
+| `resource/` | 由底包放到 `base/resource/`，不要放进 `core/` |
 | 旧 `debug/`、`cache/` | 旧日志和缓存 |
 
 ## 6. 版本匹配
 
-- `MaaCore.dll`、`MaaUtils.dll` 来自同一个 SDK Release；第三方 DLL 由 `deps.json` 描述，MaaGO 会校验并从内置运行库包补齐。
-- 资源是独立分发的；更新 core 不会修改 `resource/`。
-- 资源底包会整体替换 `resource/`；资源覆盖只合并动态文件，必须建立在已有底包之上。
-- 如果连接诊断提示资源加载失败，先用“资源底包更新”恢复官方 `resource/`，或检查 `resource/version.json`。
+- `MaaCore.dll`、`MaaUtils.dll` 来自同一个 SDK Release；第三方 DLL 由 `deps.json` 的 `runtime.windows-x64.bundle` 描述，MaaGO 会校验 bundle 和单文件 SHA-256 并补齐。
+- 资源是独立分发的；更新自定义 core 不会修改 `base/resource/`。
+- 资源底包会整体替换 `base/`（含官方核心）；资源覆盖只合并动态文件，必须建立在已有底包之上。
+- 如果连接诊断提示资源加载失败，先用“资源底包更新”恢复官方 `base/resource/`，或检查 `base/resource/version.json`。
 - 如果“前置运行库”显示需修复，点“下载前置库”，重启后生效。
 - MaaCore 版本可在“设置 → 连接 → 核心状态”或 `logs/startup.log` 查看；SDK 的 `DEBUG_VERSION` 会由 `core/.maago-core-version` 中的发布标签替代显示。
-- 游戏客户端比 MaaCore 新时，主界面模板可能对不上；应更新基础 `resource/` 到包含该界面适配的版本（2026-11 国服界面需要带 `Task-90` 的新资源），不要手工拷贝旧模板。
+- 游戏客户端比 MaaCore 新时，主界面模板可能对不上；应更新基础 `base/resource/` 到包含该界面适配的版本（2026-11 国服界面需要带 `Task-90` 的新资源），不要手工拷贝旧模板。
 
 ## 7. 安装/更新命令
 
@@ -150,14 +157,16 @@ MaaGO 会把 `asst.log` 的新增内容镜像到：
 
 ```powershell
 # 从本地 SDK 包复制 bin/ 下的 DLL
-.\scripts\install-core.ps1 -Source "D:\tool\MaaCore-sdk" -AdbSource "D:\tool\platform-tools" -Version "v0.1.4"
+.\scripts\install-core.ps1 -Source "D:\tool\MaaCore-sdk" -AdbSource "D:\tool\platform-tools" -Version "v0.1.5"
 
 # 从 GitHub 下载指定 SDK 版本
-.\scripts\update-core.ps1 -Version 0.1.4
+.\scripts\update-core.ps1 -Version 0.1.5
 
-# 更新动态资源（或首次安装基础资源）
+# 更新动态资源（合并到 base/resource/）
 .\scripts\update-resource.ps1
 ```
+
+完整底包（含官方核心）请在“设置 → 更新 → 资源底包更新”里安装，或手动把官方 `MAA-v*-win-x64.zip` 解压到 `base/`。
 
 代理用法见 [proxy.zh-CN.md](./proxy.zh-CN.md)。
 
@@ -167,7 +176,7 @@ MaaGO 会把 `asst.log` 的新增内容镜像到：
 
 ```powershell
 Test-Path .\core\MaaCore.dll
-Test-Path .\resource\version.json
+Test-Path .\base\resource\version.json
 Test-Path .\core\adb\adb.exe
 .\core\adb\adb.exe devices
 ```

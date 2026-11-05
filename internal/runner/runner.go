@@ -85,17 +85,19 @@ type FinishFunc func(state RunState)
 
 // Runner owns the queue state, its log ring and the simulated execution.
 type Runner struct {
-	mu       sync.RWMutex
-	state    RunState
-	logs     []LogEntry
-	nextID   int64
-	cancel   context.CancelFunc
-	emit     EmitFunc
-	onFinish FinishFunc
-	notify   func(title, message string)
-	logFile  *os.File
-	core     *maa.Core
-	coreLog  *corelog.Writer
+	mu          sync.RWMutex
+	state       RunState
+	logs        []LogEntry
+	nextID      int64
+	cancel      context.CancelFunc
+	emit        EmitFunc
+	onFinish    FinishFunc
+	notify      func(title, message string)
+	logFile     *os.File
+	core        *maa.Core
+	coreLog     *corelog.Writer
+	updateCheck UpdateCheckFunc
+	coreSession bool
 
 	logMu sync.Mutex
 }
@@ -381,7 +383,8 @@ func (r *Runner) complete(status Status, message string, completed, total int) {
 	r.SystemLog("info", fmt.Sprintf("任务队列结束：%s（%d/%d）", state.Message, completed, total))
 	r.SystemLog("info", "========================================")
 
-	if !state.Demo && r.coreLog != nil {
+	if !state.Demo && r.coreLog != nil && r.coreSession {
+		r.coreSession = false
 		started, _ := time.Parse(time.RFC3339, state.StartedAt)
 		duration := time.Duration(0)
 		if !started.IsZero() {
@@ -539,6 +542,7 @@ var defaultNames = map[config.TaskType]string{
 	config.TaskRecruit: "自动公招",
 	config.TaskMall:    "信用收支",
 	config.TaskAward:   "领取奖励",
+	config.TaskUpdate:  "资源更新",
 }
 
 func sleepContext(ctx context.Context, d time.Duration) bool {

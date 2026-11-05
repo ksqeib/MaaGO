@@ -12,10 +12,10 @@
 | WebView2 Runtime | Windows 11 通常自带；Windows 10 需要安装 Microsoft Edge WebView2 Runtime |
 | Visual C++ 运行库 | Microsoft Visual C++ 2015-2022 Redistributable (x64)，MaaCore 和 ONNX/OpenCV 依赖 |
 | MaaCore | `core/MaaCore.dll` 及同目录依赖 DLL（ksqeib/MaaCore SDK） |
-| MAA 资源 | `resource/`，与 core 目录分开存放 |
+| MAA 资源 | `base/resource/`，两套核心共用 |
 | ADB | `core/adb/adb.exe`，或设置中指定其他 `adb.exe` |
 | 模拟器/客户端 | MuMu、雷电、蓝叠、夜神、逍遥、WSA 等，或 MAA 支持的 PC 客户端 |
-| 磁盘空间 | `core/` 约 100 MB，`resource/` 约 300–400 MB；日志和截图额外占用 |
+| 磁盘空间 | `core/` 约 100 MB，`base/`（官方包 + 资源）约 400–600 MB；日志和截图额外占用 |
 
 ### 推荐
 
@@ -41,19 +41,25 @@ MaaGO/
 │       ├── adb.exe
 │       ├── AdbWinApi.dll
 │       └── AdbWinUsbApi.dll
-├── resource/                   # MAA 资源（与 core 分开）
-│   ├── version.json
-│   ├── tasks/
-│   ├── template/
-│   ├── onnx/
-│   ├── global/
-│   │   ├── YoStarEN/
-│   │   ├── YoStarJP/
-│   │   ├── YoStarKR/
-│   │   └── txwy/
-│   └── ...
+├── base/                       # 官方 MAA 完整包（底包 + 官方核心）
+│   ├── MAA.exe
+│   ├── MaaCore.dll             # 官方核心，可在设置里切换
+│   ├── MaaUtils.dll
+│   ├── .maago-base-version     # 安装的底包版本标记
+│   └── resource/               # 两套核心共用的 MAA 资源
+│       ├── version.json
+│       ├── tasks/
+│       ├── template/
+│       ├── onnx/
+│       ├── global/
+│       │   ├── YoStarEN/
+│       │   ├── YoStarJP/
+│       │   ├── YoStarKR/
+│       │   └── txwy/
+│       └── ...
 ├── .maago-updates\             # 更新暂存（下载/解压后等待重启）
-└── core.backup\                # 上一版 core 备份
+├── core.backup\                # 上一版自定义 core 备份
+└── base.backup\                # 上一版底包备份（安装过程中临时存在）
 ```
 
 用户数据（日志/缓存）仍然在 `%APPDATA%`：
@@ -73,9 +79,9 @@ MaaGO/
         └── diagnostic-YYYYMMDD-HHMMSS.png
 ```
 
-`core/` 只放 MaaCore SDK 二进制和 ADB；`resource/` 单独放资源。升级 core 不会动资源目录，更新底包或覆盖也不会动 core。
+`core/` 只放自定义 MaaCore SDK 二进制和 ADB；`base/` 保存官方 MAA 完整包，其中的 `resource/` 是两套核心共用的资源。升级自定义 core 不会动资源，更新底包会整体替换 `base/`，但不会影响 `core/`。
 
-> 旧版本的 `core/resource/` 会在启动时自动迁移到程序目录下的 `resource/`。
+> 旧版本的 `core/resource/` 或程序根目录的 `resource/` 会在启动时自动迁移到 `base/resource/`。第一次下载完整底包前，`base/` 里可能只有 `resource/`，没有官方核心。
 
 ## 3. core 目录清单
 
@@ -96,12 +102,12 @@ MaaGO/
 
 ### resource 必须有
 
-- `resource/version.json`
-- `resource/tasks/`
-- `resource/template/`
+- `base/resource/version.json`
+- `base/resource/tasks/`
+- `base/resource/template/`
 - OCR/ONNX 模型和 `global/` 等其余内容
 
-首次安装如果没有 `resource/`，在“资源底包更新”里下载官方 MAA 完整发布包并只提取 `resource/`。
+首次安装如果没有资源，在“资源底包更新”里下载官方 MAA 完整发布包；它会解压到 `base/`，同时提供官方核心和资源。
 
 ### 强烈建议有
 
@@ -123,7 +129,7 @@ SDK 包里只需要 `bin/*.dll`。以下文件不属于 MaaGO：
 - `MaaCore.pdb`、`MaaUtils.pdb`
 - `README.md`、`LICENSE.md`
 - `MAA.exe`、`MAA.dll` 等官方启动器文件
-- `resource/`（放到程序目录的 `resource/`，不要塞进 `core/`）
+- `resource/`（由底包放到 `base/resource/`，不要塞进 `core/`；`base/` 里的官方核心和 `MAA.exe` 也不属于自定义核心）
 
 ## 4. 安装或更新 core
 
@@ -136,11 +142,11 @@ MaaGO 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 S
 | 区域 | 操作 | 数据源 | 应用方式 |
 |---|---|---|---|
 | 核心更新 | 检查 / 下载并安装核心 | `ksqeib/MaaCore` Release（`.zip` 或 `.7z`） | 替换 `core/` 下的 DLL，保留旧 core 的第三方 DLL、控制组件和 `adb/` |
-| 资源底包更新 | 检查 / 下载并安装底包 | 官方 MAA Release 的 `MAA-v*-win-x64.zip` | **整体替换** `resource/`，写入 `.maago-base-version` |
-| 资源覆盖更新 | 检查 / 下载并安装覆盖 | `MaaResource` 主分支 | **合并**到 `resource/`，写入 `.maago-overlay-version` |
+| 资源底包更新 | 检查 / 下载并安装底包 | 官方 MAA Release 的 `MAA-v*-win-x64.zip` | **整体替换** `base/`（含官方核心和资源），写入 `base/.maago-base-version` |
+| 资源覆盖更新 | 检查 / 下载并安装覆盖 | `MaaResource` 主分支 | **合并**到 `base/resource/`，写入 `.maago-overlay-version` |
 
 1. 需要代理时先启用 HTTP 代理并填写地址，点“测试代理”。
-2. “核心更新”可留空目标版本使用最新 Release，或填写 `0.1.4`；点“检查更新”确认版本。
+2. “核心更新”可留空目标版本使用最新 Release，或填写 `0.1.5`；点“检查更新”确认版本。
 3. 点“下载并安装核心”，等待进度完成；点“重启并安装”后程序会在加载 MaaCore 前替换 DLL。
 4. 资源底包和资源覆盖分别在各自区域检查和下载。
 5. **一次只能暂存一项更新**：底包或覆盖下载完成后必须先重启应用，才能继续下一项。
@@ -152,17 +158,20 @@ MaaGO 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 S
 - 重启时把旧 `core/` 改名为 `core.backup/`
 - 把新 DLL 移到 `core/`，写入 `.maago-core-version`
 - 从旧 core 保留 OpenCV、ONNX Runtime、DirectML、FastDeploy、`MaaWin32ControlUnit.dll`、`adb/` 等 SDK 未包含的文件
-- 资源目录 `resource/` 完全不受影响
+- 资源目录 `base/resource/` 完全不受影响
 
-> SDK 包里的 `deps.json` 记录了 OpenCV、ONNX Runtime、DirectML、FastDeploy 的目标版本。MaaGO 会读取它并检查 `core/` 下的前置库：
+> SDK 包里的 `deps.json`（schema v2）记录了运行库的下载包：
 >
-> - 更新核心时，旧 core 的前置库会被保留并校验文件大小；缺少或不匹配时，自动下载 MaaGO 内置的固定运行库包（当前为 MaaCore v0.1.3 完整 SDK，只提取其中的运行库 DLL）。
-> - 也可以在“核心更新 → 前置运行库”点“下载前置库”，单独修复当前 core，重启后生效。
-> - 如果新核心要求的版本没有对应的运行库包，MaaGO 会拒绝暂存该核心并给出提示，避免装出一个无法加载的核心。
+> - `runtime.windows-x64.bundle`：`MaaCore-runtime-windows-x64-v1.zip` 的 URL、大小和 SHA-256。
+> - `runtime.windows-x64.files`：每个 DLL 的依赖名、版本、flavor 和 SHA-256。
+>
+> 更新核心时，MaaGO 会优先使用 `deps.json` 里的 runtime bundle；旧 core 的前置库会先被保留和校验，缺少或不匹配时才下载 bundle。旧格式 `deps.json` 会回退到兼容的 v0.1.3 完整 SDK 包。
+>
+> 也可以在“核心更新 → 前置运行库”点“下载前置库”，单独修复当前 core，重启后生效。
 >
 > 运行库包只包含 `opencv_world4_maa.dll`、`onnxruntime_maa.dll`、`DirectML.dll`、`fastdeploy_ppocr_maa.dll`，不会覆盖 `MaaCore.dll`、`MaaUtils.dll` 或 `MaaWin32ControlUnit.dll`。
 >
-> 来源说明：该包取自 `ksqeib/MaaCore` 的 `v0.1.3` 完整 SDK Release 资产（MaaGO 使用的核心也来自同一项目），不是 MAA 官方发布包。DirectML / FastDeploy 与 MAA 官方发布包中的文件哈希一致；OpenCV / ONNX Runtime 是相同版本但由 MaaCore 项目另行构建，文件大小和哈希与 MAA 官方发布包中的版本不同。MaaGO 以核心提供方的 `deps.json` 和固定哈希为准。
+> 来源说明：运行库由 `ksqeib/MaaCore` 项目发布（MaaGO 使用的核心也来自同一项目），不是 MAA 官方发布包。MaaGO 以核心提供方的 `deps.json`、bundle SHA-256 和单文件 SHA-256 为准。
 
 ### 方式 B：从本地 SDK 包复制
 
@@ -170,7 +179,7 @@ MaaGO 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 S
 powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
   -Source "D:\tool\MaaCore-sdk" `
   -AdbSource "D:\tool\platform-tools" `
-  -Version "v0.1.4"
+  -Version "v0.1.5"
 ```
 
 默认会复制 `bin/` 下的全部 DLL 和 `deps.json`，保留目标目录已有的第三方 DLL，不复制 `include/`、PDB 和资源。
@@ -179,19 +188,19 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
 
 ```powershell
 # 指定版本
-powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 -Version 0.1.4
+powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 -Version 0.1.5
 
 # 自动取 latest
 powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 -Version latest
 
 # 带代理
 powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 `
-  -Version 0.1.4 `
+  -Version 0.1.5 `
   -Proxy "http://127.0.0.1:7890"
 
 # 使用 GitHub 镜像前缀
 powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 `
-  -Version 0.1.4 `
+  -Version 0.1.5 `
   -Mirror "https://your-mirror.example/"
 ```
 
@@ -201,33 +210,46 @@ powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 `
 2. 提取 `bin/` 下的全部 DLL 和 `deps.json`
 3. 覆盖 `core/` 下的 `MaaCore.dll`、`MaaUtils.dll`，**保留**旧的第三方 DLL、控制组件和 `adb/`
 4. 写入 `.maago-core-version`
-5. 不修改 `resource/`
+5. 不修改 `base/resource/`
 
 `.7z` 需要本机安装 [7-Zip](https://www.7-zip.org/)（脚本会自动查找 `7z` 或默认安装目录）；没有 7-Zip 时请使用应用内更新。
 
 `-DryRun` 只打印 URL 和目标路径，不下载、不修改文件。
 
+### 核心来源：自定义核心与官方核心
+
+MaaGO 可以加载两种 MaaCore，在“设置 → 更新 → 核心来源”里切换，**重启后生效**：
+
+- **自定义核心**：`core/` 下的 ksqeib/MaaCore，由“核心更新”维护。
+- **官方核心**：`base/` 下的官方 MAA 完整包，`MaaCore.dll` 就在 `base/` 根目录，随“底包更新”一起替换。
+
+两套核心共用 `base/resource/`，所以切换核心不会复制或重建资源。
+
+如果 `base/MaaCore.dll` 还不存在（例如刚把旧的 `resource/` 迁移进 `base/`），选择官方核心后重启会回退到自定义核心；先执行一次“下载并安装底包”即可。设置页会提示底包缺失。
+
 ### 资源底包与资源覆盖
 
 资源更新拆成两项，分别对应“设置 → 更新”里的两个区域。
 
-**资源底包**是官方 MAA 完整发布包里的 `resource/`，包含模板图、`platform_diff/PC` 和所有静态资源：
+**资源底包**现在是官方 MAA 完整发布包，会保留整个包，而不只是 `resource/`：
 
-- 点“下载并安装底包”会下载约 300 MB 的 `MAA-v*-win-x64.zip`，只提取其中的 `resource/`。
-- 重启后**整体替换** `resource/`，并写入 `.maago-base-version`。
-- 底包适合游戏大版本更新后模板图缺失、PC 平台差异文件丢失等情况。
-- 替换底包会清除 `.maago-overlay-version`，之后可以再叠加覆盖。
+- 点“下载并安装底包”会下载约 300 MB 的 `MAA-v*-win-x64.zip`，完整解压到 `base/`。
+- `base/` 里包含 `MaaCore.dll`、`MAA.exe`、`resource/` 等文件；官方核心和资源一起刷新。
+- 重启后**整体替换** `base/`，并写入 `base/.maago-base-version`。
+- 底包适合游戏大版本更新后模板图缺失、PC 平台差异文件丢失、或需要切换到官方核心的情况。
+- 替换底包会清空之前的覆盖标记，之后需要再叠加资源覆盖。
 
 **资源覆盖**来自 `MaaResource` 主分支，只包含与核心版本无关的动态数据：
 
 - 点“下载并安装覆盖”会下载几 MB 的 `main` 分支压缩包。
-- 重启后**合并**到 `resource/`，不会删除底包里的 `platform_diff/PC`，并写入 `.maago-overlay-version`。
+- 重启后**合并**到 `base/resource/`，不会删除底包里的 `platform_diff/PC`，并写入 `.maago-overlay-version`。
+- 需要先安装底包（`base/resource/version.json` 存在），否则会提示先下载底包。
 - 适合新活动、公招、关卡数据的小幅更新。
 
 应用内进入“设置 → 更新”，在对应区域操作；两项都只在重启后生效，且一次只能暂存一项。命令行仍可使用：
 
 ```powershell
-# 只更新动态资源（合并到 resource/）
+# 只更新动态资源（合并到 base/resource/）
 powershell -ExecutionPolicy Bypass -File .\scripts\update-resource.ps1
 
 # 带代理
@@ -237,25 +259,26 @@ powershell -ExecutionPolicy Bypass -File .\scripts\update-resource.ps1 -Proxy "h
 powershell -ExecutionPolicy Bypass -File .\scripts\update-resource.ps1 -DryRun
 ```
 
-脚本会把 `MaaResource` 的 `resource/` 内容合并覆盖到 `resource/`，不会删除基础资源；它对应应用内的“资源覆盖更新”，不会替换底包。
+脚本会把 `MaaResource` 的 `resource/` 内容合并覆盖到 `base/resource/`，不会删除基础资源；它对应应用内的“资源覆盖更新”，不会替换底包。
 
 ### 游戏界面更新与核心版本
 
-游戏大版本更新会改动主界面按钮、主题皮肤等界面元素，而这类**模板图在基础 `resource/` 里，不在 `MaaResource` 动态更新里，也不在 MaaCore SDK 包里**。如果游戏比资源新，可能出现所有任务都在第一步识别失败。
+游戏大版本更新会改动主界面按钮、主题皮肤等界面元素，而这类**模板图在基础 `base/resource/` 里，不在 `MaaResource` 动态更新里，也不在 MaaCore SDK 包里**。如果游戏比资源新，可能出现所有任务都在第一步识别失败。
 
-例如 2026-11-01 的国服界面更新（新主题「天想」、新版 UI 尺寸）需要包含 `Default/Task-90.png` 等新模板的 `resource/`。遇到这种情况：
+例如 2026-11-01 的国服界面更新（新主题「天想」、新版 UI 尺寸）需要包含 `Default/Task-90.png` 等新模板的 `base/resource/`。遇到这种情况：
 
-- 在“设置 → 更新”点“下载并安装底包”，让 `resource/` 回到包含最新模板的官方状态；如果需要最新动态数据，再单独更新资源覆盖。
-- 确认 `resource/tasks/UiTheme/Task.json` 里有 `Task-90.png`。
+- 在“设置 → 更新”点“下载并安装底包”，让 `base/resource/` 回到包含最新模板的官方状态；如果需要最新动态数据，再单独更新资源覆盖。
+- 确认 `base/resource/tasks/UiTheme/Task.json` 里有 `Task-90.png`。
 - 如果界面又发生较大变化，等待 MAA 发布新资源；不要在本地手工维护模板副本。
 
-MaaCore SDK 本身不携带资源，更新 SDK 不会修改 `resource/`；核心、底包、覆盖需要分别更新。
+MaaCore SDK 本身不携带资源，更新自定义核心不会修改 `base/resource/`；核心、底包、覆盖需要分别更新。
 
 ### 版本兼容与回滚
 
 - 核心、资源底包、资源覆盖分开更新、分开回滚。
-- 只更新资源覆盖通常没问题；如果任务报资源/模板错误，改用资源底包恢复官方 `resource/`。
-- 底包会整体替换 `resource/`，覆盖只合并；底包更新后再叠加覆盖。
+- 只更新资源覆盖通常没问题；如果任务报资源/模板错误，改用资源底包恢复官方 `base/resource/`。
+- 底包会整体替换 `base/`，覆盖只合并；底包更新后再叠加覆盖。
+- 切换核心来源只影响加载哪个 `MaaCore.dll`，不复制资源；自定义核心仍可用 `core.backup/` 回滚。
 - 更新前建议备份：
 
 ```powershell
@@ -343,8 +366,8 @@ MaaGO 也可以直接控制明日方舟 PC 客户端，不需要 ADB：
 - PC 客户端如果以管理员身份运行，MaaGO 也建议以管理员身份运行，否则截图/输入可能被 Windows 拒绝（错误码 5）。设置页检测到未提权时会显示“以管理员身份重启”按钮，点击后走 UAC。
 - 游戏窗口需要保持 16:9 分辨率（如 1280×720、1920×1080）；窗口被拉成其他比例时 MaaCore 会拒绝绑定。
 - 游戏内 UI 缩放必须保持 100%（PC 默认 90%），鼠标尽量停在窗口中央。PC 客户端的主界面是鼠标布局，和 Android 主界面不同，不能直接套用全部 Android 模板。
-- MaaGO 会在 `resource/platform_diff/PC` 中补充 PC 确认弹窗模板（`PopupConfirmPC.png` / `PopupCancelPC.png`）；其他界面如果识别失败，需要从 PC 截图重新裁剪模板，或改用 OCR/多锚点。
-- PC 模式下“开始唤醒”不会自动启动游戏（只负责进入主界面），请先手动启动客户端。
+- MaaGO 会在 `base/resource/platform_diff/PC` 中补充 PC 确认弹窗模板（`PopupConfirmPC.png` / `PopupCancelPC.png`）；其他界面如果识别失败，需要从 PC 截图重新裁剪模板，或改用 OCR/多锚点。
+- RDP 模式下，开始唤醒任务里的“自动启动客户端”开启时，MaaGO 会先启动远端游戏，再执行 MaaCore 的开始唤醒流程；需要先在连接设置里填写远端游戏路径。Win32 本机窗口模式仍需手动启动客户端。
 - 切换 ADB / Win32 连接方式后建议重启 MaaGO，避免平台资源叠加影响。
 
 #### 禁用 PRTS 软件光标
@@ -374,12 +397,13 @@ MaaGO 可以通过 RDP 控制另一台 Windows 机器上的明日方舟 PC 客�
 1. 远端机器开启“远程桌面”，并确认账户已登录、游戏在主界面且处于前台。
 2. 本机“设置 → 连接 → 连接方式”选择 **RDP 远程机器**。
 3. 填写主机、端口（3389）、用户名、密码；分辨率建议与远端桌面一致（推荐 1920×1080），并让游戏保持全屏，避免连接时改变分辨率导致游戏变成窗口模式。
-4. 点击“连接诊断”。MaaGO 会：
+4. 在“远端游戏路径”填写 `Arknights.exe` 的完整路径，例如 `D:\Hypergryph Launcher\games\Arknights\Arknights.exe`；“开始唤醒”勾选“自动启动客户端”时会用它启动远端游戏。
+5. 点击“连接诊断”。MaaGO 会：
    - 建立 RDP 连接（NLA）
    - 如果远端处于锁屏，发送 Enter 唤醒（必要时使用保存的密码）
    - 在仪表盘显示 **RDP 预览卡片**
    - 让 MaaCore 绑定隐藏的代理窗口；截图从 RDP 画面读取，点击/按键转发到远端
-5. 诊断通过后即可运行任务。MaaCore 的任务逻辑仍在本机执行。
+6. 诊断通过后即可运行任务。MaaCore 的任务逻辑仍在本机执行。
 
 注意事项：
 
@@ -387,6 +411,8 @@ MaaGO 可以通过 RDP 控制另一台 Windows 机器上的明日方舟 PC 客�
 - RDP 预览卡片是内嵌小窗，默认只预览；点击卡片或“放大”进入大窗，打开 **操作模式** 后点击/按键才会发送到远端。关闭操作模式或大窗即回到只预览，不会误操作。
 - 预览卡片显示未连接时，可以点“连接”只建立 RDP 会话（不执行任务）；“连接诊断”也会建立会话。
 - 远端桌面/游戏需要保持 16:9；如果远端游戏变成窗口模式，请先让它全屏。
+- “开始唤醒”勾选“自动启动客户端”时，MaaGO 会在远端启动游戏并等待窗口出现；队列结束后如果“完成后动作”选了“关闭明日方舟”，会结束远端 `Arknights.exe`。
+- RDP 启动/关闭游戏会短暂使用远端任务管理器作为命令通道，完成后会尽量最小化；这是为了避免在远端安装额外 agent。
 - 密码保存在本机 `config.json`，不写入日志；请自行保护该文件。
 - 不要同时用 mstsc 连接同一个远端会话，否则会接管并断开 MaaGO 的 RDP 连接。
 - RDP 模式使用隐藏代理窗口和 PrintWindow 钩子，截图不依赖 MaaGO 前台；但本机 MaaGO 必须保持运行。
@@ -395,7 +421,7 @@ MaaGO 可以通过 RDP 控制另一台 Windows 机器上的明日方舟 PC 客�
 
 ## 6. 首次使用流程
 
-1. 确认 `core/MaaCore.dll` 和 `resource/version.json` 存在。
+1. 确认 `core/MaaCore.dll` 和 `base/resource/version.json` 存在。
 2. 启动 `MaaGO.exe`。
 3. 设置 → 连接，点击“连接诊断”。
 4. 七项全部通过后再开始任务：
@@ -423,12 +449,71 @@ MaaGO 可以通过 RDP 控制另一台 Windows 机器上的明日方舟 PC 客�
 | 自动公招 | 刷新、Tag 等级、确认等级、次数、加急、保留词条 |
 | 信用收支 | 访问好友、购物、优先/黑名单、折扣、信用低于 300 停止、OF-1 |
 | 领取奖励 | 每日/每周、邮件、免费单抽、幸运墙、开采、月卡、签到 |
+| 资源更新 | 检查 MaaCore、资源底包、资源覆盖；可自动暂存一项更新，重启 MaaGO 后安装 |
 
 暂不包含自动战斗（Copilot）、公招识别、仓库识别、干员识别等小工具。
 
 > 理智作战默认**只使用临期理智药**（默认临期窗口 1 天，即 24 小时内），普通理智药默认关闭。需要吃普通药时，再打开“使用普通理智药”并填写数量。
 >
 > MaaCore 会先消耗普通理智药，再应用临期窗口；如果同时开启两者，普通药会先被用掉。只想吃临期药时，保持“使用普通理智药”关闭即可。
+
+#### 资源更新任务
+
+在任务页点“添加任务 → 资源更新”即可加入队列。它会在其他任务开始前执行：
+
+1. 检查 MaaCore 最新 Release。
+2. 检查官方 MAA 资源底包最新 Release。
+3. 检查 MaaResource 覆盖的最新 commit。
+4. 记录“当前版本 → 最新版本”。
+
+选项：
+
+- `检查 MaaCore 更新`
+- `检查资源底包更新`
+- `检查资源覆盖更新`
+- `发现更新后自动下载`
+- `暂存更新后停止队列`
+
+行为：
+
+- 勾选“自动下载”后，会按 **核心 → 底包 → 覆盖** 的优先级暂存**一项**更新；一次只能暂存一项。
+- 默认“暂存更新后停止队列”：有更新时队列停止，提示重启 MaaGO；重启后应用更新。若有多项更新，重启后再次运行资源更新任务继续。
+- 没有可用更新时，任务完成并继续执行后面的任务。
+- 更新任务始终作为前置检查执行，不依赖它在队列中的位置。
+
+> 资源底包会整体替换 `base/`；资源覆盖会合并到 `base/resource/`。两者都需要重启后生效。
+
+#### 开机启动
+
+“设置 → 运行 → 开机启动”开启后，MaaGO 会写入当前用户的 Windows 启动项：
+
+```text
+HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+MaaGO = "<MaaGO.exe>" --autostart
+```
+
+登录 Windows 后会启动 MaaGO，并隐藏到系统托盘；点击托盘图标恢复窗口。关闭开关会删除启动项。
+
+注意：
+
+- 使用当前用户启动项，**不会自动提权**。RDP 模式通常不需要管理员；如果使用 Win32 本机窗口模式且游戏需要管理员权限，登录后可能仍需手动以管理员身份重启。
+- 移动或更新 MaaGO.exe 后，下次启动会自动刷新启动项路径。
+- 如果 Windows 的“启动应用”管理里禁用了 MaaGO，需要在那里重新启用。
+
+#### 完成后动作
+
+“设置 → 运行 → 完成后动作”目前只有两个选项：
+
+- `无动作`
+- `关闭明日方舟`
+
+选择“关闭明日方舟”后，任务队列结束（成功、失败或手动停止）会执行关闭：
+
+- RDP 模式：通过远端 Task Manager 结束 `Arknights.exe`，不影响 MaaGO 的 RDP 会话。
+- Win32 模式：结束本机 `Arknights.exe`。
+- ADB 模式：没有 PC 游戏进程，会跳过并记录日志。
+
+> 该动作只关闭游戏，不会关机、睡眠或关闭 MaaGO。
 
 ### 关卡选择
 
@@ -438,7 +523,7 @@ MaaGO 可以通过 RDP 控制另一台 Windows 机器上的明日方舟 PC 客�
 - 可以勾选多个关卡；右侧“执行顺序”按 1、2、3… 排列，支持上移、下移、删除。
 - 运行时会从第 1 个开始，自动跳过当前未开放的关卡（资源本按星期、活动按起止时间判断）；全部不可用时按第一个执行，并在日志中提示。
 - 不选任何关卡时使用游戏内“当前/上次”关卡。
-- 关卡数据来自本地 `resource/stages.json`；活动名称和开放时间来自 MAA 的 `StageActivityV2.json`，首次打开或超过 6 小时会通过“设置 → 更新”的代理下载并缓存到 `%APPDATA%\MaaGO\cache\`。
+- 关卡数据来自本地 `base/resource/stages.json`；活动名称和开放时间来自 MAA 的 `StageActivityV2.json`，首次打开或超过 6 小时会通过“设置 → 更新”的代理下载并缓存到 `%APPDATA%\MaaGO\cache\`。
 - “代理倍率”默认是 **自动**：MaaCore 会根据当前理智和关卡消耗调整连战次数（不是固定 1 次一打），日志里会显示“本次连战 N 次”。
 
 ### 定时执行
@@ -524,7 +609,7 @@ MaaGO 可以通过 RDP 控制另一台 Windows 机器上的明日方舟 PC 客�
 命令行脚本也支持同样的代理参数：
 
 ```powershell
-.\scripts\update-core.ps1 -Version 0.1.4 -Proxy "http://127.0.0.1:7890"
+.\scripts\update-core.ps1 -Version 0.1.5 -Proxy "http://127.0.0.1:7890"
 ```
 
 完整说明见 [proxy.zh-CN.md](./proxy.zh-CN.md)。
@@ -540,7 +625,7 @@ MaaGO 可以通过 RDP 控制另一台 Windows 机器上的明日方舟 PC 客�
 | 现象 | 处理 |
 |---|---|
 | 设置里显示“MaaCore 未找到” | 检查 `core/MaaCore.dll` 是否存在；确认是 x64；确认 VC++ 运行库 |
-| 显示“MaaCore 资源加载失败” | `resource/` 缺失或损坏；重新执行 `update-core.ps1` |
+| 显示“MaaCore 资源加载失败” | `base/resource/` 缺失或损坏；在“设置 → 更新”重新安装资源底包 |
 | ADB 可执行文件失败 | 放 `core/adb/adb.exe`，或在设置中填 ADB 路径 |
 | ADB 设备失败 | `adb devices` 是否 `device`；`unauthorized` 需在模拟器允许调试；网络 ADB 先 `adb connect` |
 | MaaCore 连接失败 | 先把触控模式切到 `ADB`；检查地址、模拟器配置、重启 ADB |
@@ -549,7 +634,7 @@ MaaGO 可以通过 RDP 控制另一台 Windows 机器上的明日方舟 PC 客�
 | 触控测试失败 | 换触控模式；检查模拟器输入权限；MuMu 关闭应用保活 |
 | 任务一开始就失败 | 先看 `logs\core\core-YYYY-MM-DD.log` 和 `logs\run.log` 的具体错误 |
 | PC 端所有任务都识别失败 | 先检查游戏内 `设置 → 游戏 → UI 缩放` 是否为 **100%**（PC 默认 90%），再确认 16:9 全屏、鼠标居中、PRTS 软件光标已禁用 |
-| 游戏更新后所有任务都无法识别 | 界面模板在 `resource/` 里；先在“设置 → 更新”更新资源底包，必要时再叠加资源覆盖 |
+| 游戏更新后所有任务都无法识别 | 界面模板在 `base/resource/` 里；先在“设置 → 更新”更新资源底包，必要时再叠加资源覆盖 |
 | 核心日志里只有“子任务未识别” | 表示 MaaCore 在当前截图里找不到下一步按钮；看紧随其后的“失败截图”，检查游戏是否停在弹窗、加载页或主题编辑页 |
 | 主界面主题不是默认主题 | 未知主题可能导致入口按钮模板不匹配；可在游戏内切回默认/日间主题，或等待 MaaCore 适配 |
 | 日志中文乱码 | 用 UTF-8 编辑器打开；核心日志是 UTF-8 |
@@ -564,4 +649,4 @@ MaaGO 可以通过 RDP 控制另一台 Windows 机器上的明日方舟 PC 客�
 - 诊断截图和核心日志可能包含设备 UUID、路径、游戏界面信息，分享前先脱敏。
 - 只从官方 MAA 发布页或可信镜像下载核心和资源。
 - 本项目是非官方客户端；真实运行会操作游戏，请自行评估账号风险。
-- 自动更新、安装包、完成后动作（关机/睡眠等）暂未实现。
+- 自动更新、安装包；完成后动作当前仅支持“关闭明日方舟”，锁屏/睡眠/关机等仍未实现。

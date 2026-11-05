@@ -46,6 +46,53 @@ type failureTrace struct {
 func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg config.AppConfig) {
 	defer r.finishRun()
 
+	updateTask, maaTasks := splitUpdateTask(tasks)
+	total := len(tasks)
+	completed := 0
+	if updateTask != nil {
+		options := updateTaskOptions(*updateTask)
+		staged := ""
+		if r.updateCheck == nil {
+			r.SystemLog("warn", "资源更新：更新器未接入，跳过检查")
+		} else {
+			r.SystemLog("info", "资源更新：正在检查 MaaCore、资源底包和资源覆盖…")
+			result, err := r.updateCheck(ctx, options)
+			if err != nil {
+				r.SystemLog("warn", fmt.Sprintf("资源更新：检查失败，已跳过：%v", err))
+			} else {
+				if options.Core {
+					r.SystemLog("info", fmt.Sprintf("资源更新：MaaCore %s → %s", fallback(result.CoreCurrent, "未安装"), fallback(result.CoreLatest, "未知")))
+				}
+				if options.Base {
+					r.SystemLog("info", fmt.Sprintf("资源更新：底包 %s → %s", fallback(result.BaseCurrent, "未安装"), fallback(result.BaseLatest, "未知")))
+				}
+				if options.Overlay {
+					r.SystemLog("info", fmt.Sprintf("资源更新：覆盖 %s → %s", fallback(result.OverlayCurrent, "未安装"), fallback(result.OverlayLatest, "未知")))
+				}
+				staged = result.Staged
+				if result.Message != "" {
+					r.SystemLog("info", "资源更新："+result.Message)
+				}
+			}
+		}
+		r.emitTask(TaskState{TaskID: updateTask.ID, Status: TaskCompleted, Progress: 100})
+		completed = 1
+		r.updateCoreProgress(completed, total)
+		tasks = maaTasks
+		if staged != "" {
+			message := "更新已暂存，请重启 MaaGO 后安装"
+			if taskOptionBool(updateTask.Options, "stopOnUpdate", true) {
+				r.complete(StatusStopped, message, completed, total)
+				return
+			}
+			r.SystemLog("warn", "资源更新："+message+"；按设置继续执行剩余任务")
+		}
+		if len(tasks) == 0 {
+			r.complete(StatusSuccess, "资源更新检查完成", completed, total)
+			return
+		}
+	}
+
 	if r.coreLog != nil {
 		names := make([]string, 0, len(tasks))
 		for _, task := range tasks {
@@ -56,6 +103,7 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 			version = r.core.Version()
 		}
 		r.coreLog.BeginSession(corelog.Session{Version: version, TaskNames: names})
+		r.coreSession = true
 	}
 
 	tailCtx, tailCancel := context.WithCancel(context.Background())
@@ -83,11 +131,10 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 	})
 	defer maa.SetMessageHandler(nil)
 
-	total := len(tasks)
 	fail := func(message string) {
 		stopTail()
 		r.SystemLog("error", message)
-		r.complete(StatusFailed, message, 0, total)
+		r.complete(StatusFailed, message, completed, total)
 	}
 
 	if err := r.core.LoadResource(); err != nil {
@@ -144,6 +191,14 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 				r.SystemLog("info", "已发送 RDP 解锁按键")
 			}
 			rdpSession.FocusRemote()
+			if wantsLaunchClient(tasks) {
+				r.SystemLog("info", "开始唤醒：正在启动远端明日方舟…")
+				if err := rdpSession.LaunchArknights(cfg.Connection.RDP.GamePath); err != nil {
+					r.SystemLog("warn", fmt.Sprintf("开始唤醒：启动远端明日方舟失败：%v", err))
+				} else {
+					r.SystemLog("success", "开始唤醒：已发送启动命令，等待客户端窗口")
+				}
+			}
 			r.SystemLog("info", fmt.Sprintf("RDP 远程桌面：%s@%s:%d（%dx%d）", cfg.Connection.RDP.Username, cfg.Connection.RDP.Host, cfg.Connection.RDP.Port, cfg.Connection.RDP.Width, cfg.Connection.RDP.Height))
 			if !session.HasFrame() {
 				r.SystemLog("warn", "RDP 已连接，但尚未收到远端画面")
@@ -318,7 +373,6 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 	}
 	r.SystemLog("info", "MaaCore 任务队列已启动")
 
-	completed := 0
 	failedTasks := 0
 	anyError := false
 	stopRequested := false
@@ -622,6 +676,23 @@ func (r *Runner) SystemLogCoreExtra(level string, details coreDetails) {
 	if text != "" {
 		r.SystemLog(level, text)
 	}
+}
+
+func wantsLaunchClient(tasks []config.TaskConfig) bool {
+	for _, task := range tasks {
+		if task.Type != config.TaskStartUp {
+			continue
+		}
+		value, ok := task.Options["launchClient"]
+		if !ok {
+			return true
+		}
+		if enabled, ok := value.(bool); ok {
+			return enabled
+		}
+		return true
+	}
+	return false
 }
 
 func taskByTypeByChain(tasks map[config.TaskType]config.TaskConfig, chain string) (config.TaskConfig, bool) {

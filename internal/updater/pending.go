@@ -2,6 +2,7 @@ package updater
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,22 +44,37 @@ func readPending(updatesDir string) (pendingUpdate, bool, error) {
 	return pending, true, nil
 }
 
-// MigrateLayout moves <core>/resource to the sibling resource directory used
-// by the separated layout. It is a no-op when the new directory already exists.
+// MigrateLayout moves legacy resource directories under base/resource. Both
+// cores share this tree: the custom core points MaaCore at it, and the official
+// core lives in base/ next to it.
 func MigrateLayout(coreDir string) (string, error) {
 	root := filepath.Dir(filepath.Clean(coreDir))
+	baseResource := filepath.Join(root, "base", "resource")
+	if _, err := os.Stat(baseResource); err == nil {
+		return "", nil
+	}
+
+	// Very old layout kept resource/ inside core/.
 	oldResource := filepath.Join(coreDir, "resource")
-	newResource := filepath.Join(root, "resource")
-	if _, err := os.Stat(newResource); err == nil {
+	rootResource := filepath.Join(root, "resource")
+	if _, err := os.Stat(oldResource); err == nil {
+		if _, err := os.Stat(rootResource); os.IsNotExist(err) {
+			if err := os.Rename(oldResource, rootResource); err != nil {
+				return "", fmt.Errorf("move resource directory to %s: %w", rootResource, err)
+			}
+		}
+	}
+
+	if _, err := os.Stat(rootResource); err != nil {
 		return "", nil
 	}
-	if _, err := os.Stat(oldResource); err != nil {
-		return "", nil
+	if err := os.MkdirAll(filepath.Dir(baseResource), 0o755); err != nil {
+		return "", fmt.Errorf("create base directory: %w", err)
 	}
-	if err := os.Rename(oldResource, newResource); err != nil {
-		return "", fmt.Errorf("move resource directory to %s: %w", newResource, err)
+	if err := os.Rename(rootResource, baseResource); err != nil {
+		return "", fmt.Errorf("move resource directory to %s: %w", baseResource, err)
 	}
-	return "resource directory moved to " + newResource, nil
+	return "resource directory moved to " + baseResource, nil
 }
 
 // ApplyPending installs a staged core or resource update. It must run before
@@ -111,11 +127,41 @@ func ApplyPending(coreDir string) (string, error) {
 		_ = os.Remove(pendingPath(updatesDir))
 		return "runtime dependencies " + pending.Version + " installed", nil
 
+	case "base-package":
+		if err := validateBasePackage(pending.Staging); err != nil {
+			return "", err
+		}
+		baseDir := filepath.Join(filepath.Dir(coreDir), "base")
+		backup := baseDir + ".backup"
+		_ = os.RemoveAll(backup)
+		hadTarget := false
+		if _, err := os.Stat(baseDir); err == nil {
+			hadTarget = true
+			if err := os.Rename(baseDir, backup); err != nil {
+				return "", fmt.Errorf("move old base to backup: %w", err)
+			}
+		}
+		if err := os.Rename(pending.Staging, baseDir); err != nil {
+			if hadTarget {
+				_ = os.Rename(backup, baseDir)
+			}
+			return "", fmt.Errorf("install base package: %w", err)
+		}
+		if pending.Version != "" {
+			_ = os.WriteFile(filepath.Join(baseDir, ".maago-base-version"), []byte(pending.Version), 0o644)
+		}
+		_ = os.RemoveAll(filepath.Dir(pending.Staging))
+		_ = os.RemoveAll(backup)
+		_ = os.Remove(pendingPath(updatesDir))
+		return "base package " + pending.Version + " installed", nil
+
 	case "resource-base":
+		// Legacy staged resource-only base. Install it as base/resource.
 		if _, err := os.Stat(filepath.Join(pending.Staging, "version.json")); err != nil {
 			return "", fmt.Errorf("staged base resource is invalid: %w", err)
 		}
-		target := filepath.Join(filepath.Dir(coreDir), "resource")
+		baseDir := filepath.Join(filepath.Dir(coreDir), "base")
+		target := filepath.Join(baseDir, "resource")
 		backup := target + ".backup"
 		_ = os.RemoveAll(backup)
 		hadTarget := false
@@ -133,7 +179,7 @@ func ApplyPending(coreDir string) (string, error) {
 		}
 		_ = os.RemoveAll(backup)
 		if pending.Version != "" {
-			_ = os.WriteFile(filepath.Join(target, ".maago-base-version"), []byte(pending.Version), 0o644)
+			_ = os.WriteFile(filepath.Join(baseDir, ".maago-base-version"), []byte(pending.Version), 0o644)
 		}
 		_ = os.Remove(filepath.Join(target, ".maago-overlay-version"))
 		_ = os.RemoveAll(filepath.Dir(pending.Staging))
@@ -144,9 +190,9 @@ func ApplyPending(coreDir string) (string, error) {
 		if _, err := os.Stat(filepath.Join(pending.Staging, "version.json")); err != nil {
 			return "", fmt.Errorf("staged resource overlay is invalid: %w", err)
 		}
-		target := filepath.Join(filepath.Dir(coreDir), "resource")
-		if err := os.MkdirAll(target, 0o755); err != nil {
-			return "", fmt.Errorf("create resource directory: %w", err)
+		target := filepath.Join(filepath.Dir(coreDir), "base", "resource")
+		if _, err := os.Stat(filepath.Join(target, "version.json")); err != nil {
+			return "", errors.New("cannot apply overlay: install the base package first")
 		}
 		if err := copyPath(pending.Staging, target); err != nil {
 			return "", fmt.Errorf("apply resource overlay: %w", err)
@@ -162,7 +208,7 @@ func ApplyPending(coreDir string) (string, error) {
 		if _, err := os.Stat(filepath.Join(pending.Staging, "version.json")); err != nil {
 			return "", fmt.Errorf("staged resource is invalid: %w", err)
 		}
-		target := filepath.Join(filepath.Dir(coreDir), "resource")
+		target := filepath.Join(filepath.Dir(coreDir), "base", "resource")
 		if err := os.MkdirAll(target, 0o755); err != nil {
 			return "", fmt.Errorf("create resource directory: %w", err)
 		}

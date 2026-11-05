@@ -34,6 +34,7 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 interface AppStoreValue {
   config: AppConfig;
   updateConfig: (updater: (previous: AppConfig) => AppConfig) => void;
+  setAutoStart: (enabled: boolean) => Promise<void>;
   ready: boolean;
   saveState: SaveState;
   run: RunState;
@@ -284,6 +285,20 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
     setConfig((previous) => updater(cloneConfig(previous)));
   }, []);
 
+  const setAutoStart = useCallback(async (enabled: boolean) => {
+    try {
+      await api.SetAutoStart(enabled);
+      setConfig((previous) => {
+        const next = cloneConfig(previous);
+        next.run.autoStart = enabled;
+        return next;
+      });
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "设置开机启动失败");
+    }
+  }, []);
+
   const guard = useCallback(async (action: () => Promise<unknown>, fallback: string) => {
     try {
       await action();
@@ -509,6 +524,7 @@ export const AppStoreProvider = ({ children }: { children: React.ReactNode }) =>
   const value: AppStoreValue = {
     config,
     updateConfig,
+    setAutoStart,
     ready,
     saveState,
     run,

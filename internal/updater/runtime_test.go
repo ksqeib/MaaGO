@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,6 +29,53 @@ func testDeps() coreDependencies {
 	}
 }
 
+func testV2Deps() coreDependencies {
+	return coreDependencies{
+		SchemaVersion: 2,
+		Runtime: map[string]runtimePlatform{
+			"windows-x64": {
+				Bundle: runtimeBundle{
+					URL:    "https://github.com/ksqeib/MaaCore/releases/download/runtime-v1/MaaCore-runtime-windows-x64-v1.zip",
+					SHA256: "e6f040a80973bb2149d87aa2b428130c1a9be77ff5f571bb0b08927a6c900f9e",
+					Size:   38417030,
+				},
+				Files: map[string]runtimeFileSpec{
+					"opencv_world4_maa.dll": {
+						Dependency: "opencv",
+						Version:    "4.12.0",
+						SHA256:     "0455560c75bc456b5f758c94af653b6f0397ed8a28b9605cf52c62e7c8f18781",
+					},
+					"onnxruntime_maa.dll": {
+						Dependency: "onnxruntime",
+						Version:    "1.19.2",
+						Flavor:     "directml",
+						SHA256:     "410de3464172dae2945a4663f274e34c59965bc8233b0411de16baab56dda1a7",
+					},
+					"DirectML.dll": {
+						Dependency: "directml",
+						Version:    "1.15.4",
+						SHA256:     "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1",
+					},
+					"fastdeploy_ppocr_maa.dll": {
+						Dependency: "fastdeploy",
+						Version:    "1.0.7",
+						SHA256:     "52591c163ed7d6b8c0196a54ca5168fc1eb3b785f06253e200424771e9183fb6",
+					},
+				},
+			},
+		},
+	}
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 func TestMatchRuntimePack(t *testing.T) {
 	if pack := matchRuntimePack(testDeps()); pack == nil {
 		t.Fatal("expected the known v0.1.3 pack to match deps.json v0.1.4")
@@ -41,6 +89,38 @@ func TestMatchRuntimePack(t *testing.T) {
 	deps.Dependencies["onnxruntime"] = coreDependency{Version: "1.19.2", Flavor: "cpu"}
 	if pack := matchRuntimePack(deps); pack != nil {
 		t.Fatal("flavor mismatch must not match the DirectML pack")
+	}
+}
+
+func TestV2RuntimeBundle(t *testing.T) {
+	deps := coreDependencies{
+		SchemaVersion: 2,
+		Runtime: map[string]runtimePlatform{
+			"windows-x64": {
+				Bundle: runtimeBundle{
+					URL:    "https://example.com/runtime.zip",
+					SHA256: "abc",
+					Size:   123,
+				},
+				Files: map[string]runtimeFileSpec{
+					"opencv_world4_maa.dll": {Dependency: "opencv", Version: "4.12.0", SHA256: "a"},
+					"onnxruntime_maa.dll":   {Dependency: "onnxruntime", Version: "1.19.2", Flavor: "directml", SHA256: "b"},
+				},
+			},
+		},
+	}
+	pack := runtimePackFor(deps)
+	if pack == nil || pack.URL != "https://example.com/runtime.zip" || pack.SHA256 != "abc" || pack.Size != 123 {
+		t.Fatalf("unexpected v2 pack: %+v", pack)
+	}
+	if pack.Files["onnxruntime_maa.dll"].ArchivePath != "onnxruntime_maa.dll" {
+		t.Fatal("v2 runtime bundle files must be stored at the archive root")
+	}
+	if pack.Files["onnxruntime_maa.dll"].Version != "1.19.2" {
+		t.Fatal("v2 per-file version was not parsed")
+	}
+	if pack.Dependencies["onnxruntime"] != "1.19.2" || pack.Flavors["onnxruntime"] != "directml" {
+		t.Fatalf("v2 dependency metadata: %+v %+v", pack.Dependencies, pack.Flavors)
 	}
 }
 
@@ -108,7 +188,7 @@ func TestDownloadRuntimeStages(t *testing.T) {
 	if err := os.MkdirAll(core, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	data := `{"dependencies":{"opencv":{"version":"4.12.0"},"onnxruntime":{"version":"1.19.2","flavor":"directml"},"directml":{"version":"1.15.4"},"fastdeploy":{"version":"1.0.7"}},"runtimeFiles":{"opencv_world4_maa.dll":"opencv","onnxruntime_maa.dll":"onnxruntime","DirectML.dll":"directml","fastdeploy_ppocr_maa.dll":"fastdeploy"}}`
+	data := mustJSON(t, testV2Deps())
 	if err := os.WriteFile(filepath.Join(core, "deps.json"), []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +229,11 @@ func TestDownloadCorePreservesRuntime(t *testing.T) {
 	service := New(core, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	if err := service.DownloadCore(ctx, "0.1.4"); err != nil {
+	version := os.Getenv("MAAGO_TEST_CORE_VERSION")
+	if version == "" {
+		version = "0.1.5"
+	}
+	if err := service.DownloadCore(ctx, version); err != nil {
 		t.Fatal(err)
 	}
 	pending, ok, err := readPending(filepath.Join(root, ".maago-updates"))

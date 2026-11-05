@@ -57,6 +57,18 @@ export function taskSummary(task: TaskConfig, language?: string): string {
       const count = Object.values(options).filter((value) => value === true).length;
       return text(language, `已选 ${count} 项奖励`, `${count} reward groups`);
     }
+    case "update": {
+      const parts: string[] = [];
+      if (options.checkCore !== false) parts.push(text(language, "核心", "core"));
+      if (options.checkBase !== false) parts.push(text(language, "底包", "base"));
+      if (options.checkOverlay !== false) parts.push(text(language, "覆盖", "overlay"));
+      const scope = parts.join(" / ") || text(language, "未选择", "none");
+      return text(
+        language,
+        options.download !== false ? `检查并下载：${scope}` : `仅检查：${scope}`,
+        options.download !== false ? `Check and download: ${scope}` : `Check only: ${scope}`,
+      );
+    }
     default:
       return "";
   }

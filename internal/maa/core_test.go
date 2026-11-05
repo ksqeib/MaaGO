@@ -48,6 +48,9 @@ func TestCoreLoadsAndCreatesInstance(t *testing.T) {
 
 	cfg := config.Default()
 	for _, task := range cfg.Tasks {
+		if task.Type == config.TaskUpdate {
+			continue
+		}
 		params, err := BuildTaskParams(task, cfg)
 		if err != nil {
 			t.Fatalf("%s: %v", task.Type, err)
@@ -66,6 +69,9 @@ func TestCoreLoadsAndCreatesInstance(t *testing.T) {
 func TestBuildTaskParams(t *testing.T) {
 	cfg := config.Default()
 	for _, task := range cfg.Tasks {
+		if task.Type == config.TaskUpdate {
+			continue
+		}
 		params, err := BuildTaskParams(task, cfg)
 		if err != nil {
 			t.Fatalf("%s: %v", task.Type, err)

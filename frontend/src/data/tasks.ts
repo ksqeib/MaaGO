@@ -1,6 +1,6 @@
 import type { LocalizedText, TaskConfig, TaskType } from "@/types/maa";
 
-export type TaskIcon = "rocket" | "swords" | "factory" | "users" | "shopping" | "gift";
+export type TaskIcon = "rocket" | "swords" | "factory" | "users" | "shopping" | "gift" | "update";
 
 export type FieldType = "switch" | "text" | "number" | "select" | "multiselect" | "stage-plan";
 
@@ -424,6 +424,51 @@ export const TASK_META: TaskMeta[] = [
       },
     ],
   },
+  {
+    type: "update",
+    icon: "update",
+    label: { zh: "资源更新", en: "Update resources" },
+    description: {
+      zh: "检查并下载核心、资源底包、资源覆盖更新；有更新时会暂存并在重启后安装。",
+      en: "Check and download core, base resource and overlay updates. Staged updates install after a restart.",
+    },
+    fields: [
+      {
+        key: "checkCore",
+        type: "switch",
+        label: { zh: "检查 MaaCore 更新", en: "Check MaaCore update" },
+        defaultValue: true,
+      },
+      {
+        key: "checkBase",
+        type: "switch",
+        label: { zh: "检查资源底包更新", en: "Check base resource update" },
+        defaultValue: true,
+      },
+      {
+        key: "checkOverlay",
+        type: "switch",
+        label: { zh: "检查资源覆盖更新", en: "Check resource overlay update" },
+        defaultValue: true,
+      },
+      {
+        key: "download",
+        type: "switch",
+        label: { zh: "发现更新后自动下载", en: "Download when an update is found" },
+        defaultValue: true,
+      },
+      {
+        key: "stopOnUpdate",
+        type: "switch",
+        label: { zh: "暂存更新后停止队列", en: "Stop the queue after staging" },
+        hint: {
+          zh: "核心和资源更新都需要重启 MaaGO 才会生效",
+          en: "Core and resource updates take effect after restarting MaaGO",
+        },
+        defaultValue: true,
+      },
+    ],
+  },
 ];
 
 export const TASK_META_BY_TYPE = Object.fromEntries(
@@ -465,7 +510,7 @@ export function defaultTasks(): TaskConfig[] {
   return TASK_META.map((meta) => {
     const task = createTask(meta.type);
     task.id = `task-${meta.type}`;
-    task.enabled = true;
+    task.enabled = meta.type !== "update";
     return task;
   });
 }

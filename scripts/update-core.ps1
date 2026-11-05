@@ -15,7 +15,7 @@ if (-not $Destination) {
     $Destination = Join-Path (Split-Path -Parent $PSScriptRoot) "core"
 }
 $Destination = [IO.Path]::GetFullPath($Destination)
-$resourceDir = Join-Path (Split-Path -Parent $Destination) "resource"
+$resourceDir = Join-Path (Join-Path (Split-Path -Parent $Destination) "base") "resource"
 if (-not $Proxy) {
     $Proxy = $env:HTTPS_PROXY
     if (-not $Proxy) { $Proxy = $env:HTTP_PROXY }

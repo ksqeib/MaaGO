@@ -22,9 +22,10 @@ import (
 // coreDependencies mirrors the subset of the MaaCore deps.json that describes
 // runtime DLLs. Build-time dependencies (Boost, zlib) are ignored.
 type coreDependencies struct {
-	SchemaVersion int                       `json:"schemaVersion"`
-	Dependencies  map[string]coreDependency `json:"dependencies"`
-	RuntimeFiles  map[string]string         `json:"runtimeFiles"`
+	SchemaVersion int                        `json:"schemaVersion"`
+	Dependencies  map[string]coreDependency  `json:"dependencies"`
+	RuntimeFiles  map[string]string          `json:"runtimeFiles"`
+	Runtime       map[string]runtimePlatform `json:"runtime"`
 }
 
 type coreDependency struct {
@@ -33,11 +34,32 @@ type coreDependency struct {
 	Linkage string `json:"linkage"`
 }
 
+// runtimePlatform is the schema v2 runtime section.
+type runtimePlatform struct {
+	Bundle runtimeBundle              `json:"bundle"`
+	Files  map[string]runtimeFileSpec `json:"files"`
+}
+
+type runtimeBundle struct {
+	URL    string `json:"url"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
+
+type runtimeFileSpec struct {
+	Dependency string `json:"dependency"`
+	Version    string `json:"version"`
+	Flavor     string `json:"flavor"`
+	SHA256     string `json:"sha256"`
+}
+
 type runtimePackFile struct {
 	Dependency  string
 	ArchivePath string
 	Size        int64
 	SHA256      string
+	Version     string
+	Flavor      string
 }
 
 type runtimePack struct {
@@ -55,9 +77,8 @@ type runtimePack struct {
 // extracts them from a pinned full package instead of trusting whatever DLLs
 // happen to be next to the old core.
 //
-// v0.1.3 is the last full SDK package published by ksqeib/MaaCore for the same
-// dependency set as v0.1.4. Only the runtime DLLs are used; its MaaCore.dll and
-// MaaUtils.dll are ignored.
+// v0.1.3 is kept as a legacy fallback for old schema-v1 deps.json files. New
+// schema-v2 cores provide runtime.windows-x64.bundle directly.
 var runtimePacks = []runtimePack{
 	{
 		Name:   "ksqeib/MaaCore v0.1.3 full SDK runtime",
@@ -139,9 +160,22 @@ func readCoreDependencies(coreDir string) (coreDependencies, bool, error) {
 	return deps, true, nil
 }
 
+func (deps coreDependencies) runtimeFileMap() map[string]string {
+	files := make(map[string]string, len(deps.RuntimeFiles))
+	for name, key := range deps.RuntimeFiles {
+		files[name] = key
+	}
+	if platform, ok := deps.Runtime["windows-x64"]; ok {
+		for name, spec := range platform.Files {
+			files[name] = spec.Dependency
+		}
+	}
+	return files
+}
+
 func (deps coreDependencies) runtimeDependencyKeys() []string {
 	seen := map[string]bool{}
-	for _, key := range deps.RuntimeFiles {
+	for _, key := range deps.runtimeFileMap() {
 		if key != "" {
 			seen[key] = true
 		}
@@ -154,13 +188,27 @@ func (deps coreDependencies) runtimeDependencyKeys() []string {
 	return keys
 }
 
+func (deps coreDependencies) dependencyVersion(key string) string {
+	if dependency, ok := deps.Dependencies[key]; ok && dependency.Version != "" {
+		return dependency.Version
+	}
+	if platform, ok := deps.Runtime["windows-x64"]; ok {
+		for _, spec := range platform.Files {
+			if spec.Dependency == key && spec.Version != "" {
+				return spec.Version
+			}
+		}
+	}
+	return ""
+}
+
 func (deps coreDependencies) versionLabel() string {
 	keys := deps.runtimeDependencyKeys()
 	parts := make([]string, 0, len(keys))
 	for _, key := range keys {
 		value := key
-		if dependency, ok := deps.Dependencies[key]; ok && dependency.Version != "" {
-			value += " " + dependency.Version
+		if version := deps.dependencyVersion(key); version != "" {
+			value += " " + version
 		}
 		parts = append(parts, value)
 	}
@@ -204,17 +252,54 @@ func matchRuntimePack(deps coreDependencies) *runtimePack {
 	return nil
 }
 
+func runtimePackFor(deps coreDependencies) *runtimePack {
+	if platform, ok := deps.Runtime["windows-x64"]; ok && platform.Bundle.URL != "" {
+		pack := &runtimePack{
+			Name:         "MaaCore runtime bundle",
+			URL:          platform.Bundle.URL,
+			SHA256:       platform.Bundle.SHA256,
+			Size:         platform.Bundle.Size,
+			Dependencies: map[string]string{},
+			Flavors:      map[string]string{},
+			Files:        map[string]runtimePackFile{},
+		}
+		for name, spec := range platform.Files {
+			pack.Files[name] = runtimePackFile{
+				Dependency:  spec.Dependency,
+				ArchivePath: name,
+				SHA256:      spec.SHA256,
+				Version:     spec.Version,
+				Flavor:      spec.Flavor,
+			}
+			if spec.Dependency != "" && spec.Version != "" {
+				pack.Dependencies[spec.Dependency] = spec.Version
+			}
+			if spec.Dependency != "" && spec.Flavor != "" {
+				pack.Flavors[spec.Dependency] = spec.Flavor
+			}
+		}
+		return pack
+	}
+	return matchRuntimePack(deps)
+}
+
 func inspectRuntimeFiles(coreDir string, deps coreDependencies, pack *runtimePack, verifyHash bool) (missing, mismatched []string, files []RuntimeFileStatus) {
-	names := make([]string, 0, len(deps.RuntimeFiles))
-	for name := range deps.RuntimeFiles {
+	allFiles := deps.runtimeFileMap()
+	names := make([]string, 0, len(allFiles))
+	for name := range allFiles {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		key := deps.RuntimeFiles[name]
+		key := allFiles[name]
 		required := ""
 		if dependency, ok := deps.Dependencies[key]; ok {
 			required = dependency.Version
+		}
+		if pack != nil {
+			if expected, ok := pack.Files[name]; ok && expected.Version != "" {
+				required = expected.Version
+			}
 		}
 		state := RuntimeFileStatus{
 			Name:       name,
@@ -265,7 +350,7 @@ func (s *Service) RuntimeStatus() RuntimeStatus {
 			Message:   "core has no deps.json; runtime check skipped",
 		}
 	}
-	pack := matchRuntimePack(deps)
+	pack := runtimePackFor(deps)
 	missing, mismatched, files := inspectRuntimeFiles(s.coreDir, deps, pack, false)
 	status := RuntimeStatus{
 		Available:  true,
@@ -282,8 +367,6 @@ func (s *Service) RuntimeStatus() RuntimeStatus {
 		status.Message = "runtime dependencies are present but cannot be verified: no matching runtime pack for this dependency set"
 	case status.OK:
 		status.Message = "runtime dependencies are complete"
-	case len(missing) > 0:
-		status.Message = "missing runtime files: " + strings.Join(missing, ", ")
 	default:
 		status.Message = "runtime files do not match the required versions: " + strings.Join(mismatched, ", ")
 	}
@@ -299,10 +382,10 @@ func (s *Service) RuntimeStatus() RuntimeStatus {
 // ensureRuntime makes a staged core self-contained. It is called after the new
 // core DLLs are extracted and old core files are copied over.
 func (s *Service) ensureRuntime(ctx context.Context, client *http.Client, stageRoot, stagingCore string, deps coreDependencies, mirror string) error {
-	if s.skipRuntime || len(deps.RuntimeFiles) == 0 {
+	if s.skipRuntime || len(deps.runtimeFileMap()) == 0 {
 		return nil
 	}
-	pack := matchRuntimePack(deps)
+	pack := runtimePackFor(deps)
 	missing, mismatched, _ := inspectRuntimeFiles(stagingCore, deps, pack, true)
 	if len(missing) == 0 && len(mismatched) == 0 {
 		writeRuntimeMarker(stagingCore, deps, pack, "preserved from previous core")
@@ -326,7 +409,7 @@ func (s *Service) ensureRuntime(ctx context.Context, client *http.Client, stageR
 
 func (s *Service) downloadRuntimePack(ctx context.Context, client *http.Client, pack *runtimePack, deps coreDependencies, stageRoot, destination, mirror string) error {
 	archive := filepath.Join(stageRoot, "runtime-pack.zip")
-	if err := s.download(ctx, client, withMirror(pack.URL, mirror), archive, deps.versionLabel()); err != nil {
+	if err := s.download(ctx, client, withMirror(pack.URL, mirror), archive, deps.versionLabel(), pack.Size); err != nil {
 		return err
 	}
 	sum, err := hashFile(archive)
@@ -360,7 +443,7 @@ func extractRuntimeArchive(archive, destination string, deps coreDependencies, p
 		Name string
 	}
 	wanted := map[string]wantedFile{}
-	for name := range deps.RuntimeFiles {
+	for name := range deps.runtimeFileMap() {
 		file, ok := pack.Files[name]
 		if !ok {
 			return fmt.Errorf("runtime pack has no entry for %s", name)
@@ -382,7 +465,7 @@ func extractRuntimeArchive(archive, destination string, deps coreDependencies, p
 		}
 		found[item.Name] = true
 	}
-	for name := range deps.RuntimeFiles {
+	for name := range deps.runtimeFileMap() {
 		if !found[name] {
 			return fmt.Errorf("runtime pack is missing %s", name)
 		}
@@ -485,7 +568,7 @@ func (s *Service) DownloadRuntime(ctx context.Context) error {
 		s.fail(err)
 		return err
 	}
-	pack := matchRuntimePack(deps)
+	pack := runtimePackFor(deps)
 	if pack == nil {
 		err = fmt.Errorf("no runtime pack is available for %s", deps.versionLabel())
 		s.fail(err)

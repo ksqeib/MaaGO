@@ -117,9 +117,21 @@ func New() *Core {
 	return core
 }
 
-// NewAt loads MaaCore from an explicit directory.
+// NewAt loads MaaCore from an explicit directory and reads the sibling
+// resource directory.
 func NewAt(dir string) *Core {
-	core := &Core{dir: dir, resourceRoot: filepath.Dir(filepath.Clean(dir)), procs: map[string]uintptr{}}
+	return NewAtWithResource(dir, filepath.Dir(filepath.Clean(dir)))
+}
+
+// NewAtWithResource loads MaaCore from dir but reads resources from
+// resourceRoot, the directory that contains resource/. The custom core lives
+// in core/ while both cores share the resource tree under base/.
+func NewAtWithResource(dir, resourceRoot string) *Core {
+	core := &Core{
+		dir:          dir,
+		resourceRoot: filepath.Clean(resourceRoot),
+		procs:        map[string]uintptr{},
+	}
 	core.load()
 	return core
 }
