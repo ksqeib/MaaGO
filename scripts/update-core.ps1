@@ -37,11 +37,12 @@ $tag = ""
 $assetUrl = ""
 $assetName = ""
 
-if ($Version -eq "latest") {
-    $apiUrl = Add-Mirror "https://api.github.com/repos/ksqeib/MaaCore/releases/latest"
+if ($Version -eq "latest" -or $Version -eq "nightly" -or $Version -like "nightly-*") {
+    $tag = "nightly"
+    $apiUrl = Add-Mirror "https://api.github.com/repos/ksqeib/MaaCoreBuild/releases/tags/nightly"
 } else {
     $tag = "v" + $Version.TrimStart("v")
-    $apiUrl = Add-Mirror "https://api.github.com/repos/ksqeib/MaaCore/releases/tags/$tag"
+    $apiUrl = Add-Mirror "https://api.github.com/repos/ksqeib/MaaCoreBuild/releases/tags/$tag"
 }
 
 if ($DryRun) {
@@ -127,12 +128,26 @@ try {
                 }
             }
         }
+        $runtimeSection = $depsData.runtime.'windows-x64'
+        if ($runtimeSection -and $runtimeSection.files) {
+            foreach ($property in $runtimeSection.files.PSObject.Properties) {
+                if (-not (Test-Path (Join-Path $Destination $property.Name))) {
+                    $missing += $property.Name
+                }
+            }
+        }
         if ($missing.Count -gt 0) {
             Write-Warning "Missing runtime DLLs: $($missing -join ', ')"
             Write-Warning "Open MaaGO -> Settings -> Update -> Download runtime, or copy them from a full MAA release."
         }
     }
-    Set-Content -Path (Join-Path $Destination ".maago-core-version") -Value $tag -NoNewline -Encoding ascii
+    $marker = $tag
+    if ($depsData -and $depsData.maaCore -and $depsData.maaCore.version) {
+        $marker = $depsData.maaCore.version
+    } elseif ($tag -eq "nightly" -and $release.body -match 'nightly-(\d{8})-([0-9a-fA-F]{7,40})') {
+        $marker = "nightly-$($Matches[1])-" + $Matches[2].Substring(0, 7).ToLower()
+    }
+    Set-Content -Path (Join-Path $Destination ".maago-core-version") -Value $marker -NoNewline -Encoding ascii
 
     if ($AdbSource) {
         $adbTarget = Join-Path $Destination "adb"

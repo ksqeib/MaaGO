@@ -35,7 +35,7 @@ func testV2Deps() coreDependencies {
 		Runtime: map[string]runtimePlatform{
 			"windows-x64": {
 				Bundle: runtimeBundle{
-					URL:    "https://github.com/ksqeib/MaaCore/releases/download/runtime-v1/MaaCore-runtime-windows-x64-v1.zip",
+					URL:    "https://github.com/ksqeib/MaaCoreBuild/releases/download/runtime-v1/MaaCore-runtime-windows-x64-v1.zip",
 					SHA256: "e6f040a80973bb2149d87aa2b428130c1a9be77ff5f571bb0b08927a6c900f9e",
 					Size:   38417030,
 				},

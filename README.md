@@ -39,7 +39,7 @@ MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArkn
 
 ## MaaCore 目录
 
-MaaCore 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 SDK 发布包，资源和 core 分开。新版 SDK 的 `deps.json` 会把运行库放在单独的 `MaaCore-runtime-windows-x64-v1.zip` 里，MaaGO 会按 `deps.json` 的 URL/SHA-256 下载并校验。
+自定义 MaaCore 使用 [ksqeib/MaaCoreBuild](https://github.com/ksqeib/MaaCoreBuild/releases/tag/nightly) 的 nightly SDK 发布包（目前没有正式版本），资源和 core 分开。nightly 的 `deps.json` 会把运行库放在单独的 `MaaCore-runtime-windows-x64-v1.zip` 里，MaaGO 会按 `deps.json` 的 URL/SHA-256 下载并校验。
 
 ```
 core/                  # 只放 SDK 二进制
@@ -76,13 +76,13 @@ base/                  # 官方 MAA 完整包（底包 + 官方核心）
 powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
   -Source "D:\path\to\MaaCore-sdk" `
   -AdbSource "D:\path\to\platform-tools" `
-  -Version "v0.1.5"
+  -Version "nightly"
 ```
 
 从 GitHub 下载：
 
 ```powershell
-.\scripts\update-core.ps1 -Version latest
+.\scripts\update-core.ps1 -Version nightly
 ```
 
 查找顺序：`%MAAGO_CORE_DIR%` → `<exe>/core` → `<exe>/../core` → `<cwd>/core`。

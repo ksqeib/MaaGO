@@ -23,9 +23,17 @@ import (
 // runtime DLLs. Build-time dependencies (Boost, zlib) are ignored.
 type coreDependencies struct {
 	SchemaVersion int                        `json:"schemaVersion"`
+	MaaCore       coreBuildInfo              `json:"maaCore"`
 	Dependencies  map[string]coreDependency  `json:"dependencies"`
 	RuntimeFiles  map[string]string          `json:"runtimeFiles"`
 	Runtime       map[string]runtimePlatform `json:"runtime"`
+}
+
+// coreBuildInfo is the maaCore section of deps.json. Nightly bundles record
+// their exact build id here.
+type coreBuildInfo struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
 }
 
 type coreDependency struct {

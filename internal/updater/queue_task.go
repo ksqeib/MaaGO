@@ -60,8 +60,8 @@ func (s *Service) CheckForQueueTask(ctx context.Context, options QueueUpdateOpti
 		} else {
 			checked++
 			coreRelease = release
-			result.CoreLatest = release.Tag
-			coreAvailable = result.CoreCurrent == "" || !strings.EqualFold(result.CoreCurrent, release.Tag)
+			result.CoreLatest = release.Version
+			coreAvailable = result.CoreCurrent == "" || !strings.EqualFold(result.CoreCurrent, release.Version)
 		}
 	}
 	if options.Base {
@@ -100,12 +100,12 @@ func (s *Service) CheckForQueueTask(ctx context.Context, options QueueUpdateOpti
 	switch {
 	case coreAvailable:
 		if options.Download {
-			if err := s.DownloadCore(ctx, coreRelease.Tag); err != nil {
+			if err := s.DownloadCore(ctx, coreRelease.Version); err != nil {
 				return result, err
 			}
 			result.Staged = "core"
 		}
-		result.Message = "MaaCore 有新版本 " + coreRelease.Tag
+		result.Message = "MaaCore 有新版本 " + coreRelease.Version
 	case baseAvailable:
 		if options.Download {
 			if err := s.DownloadBase(ctx); err != nil {

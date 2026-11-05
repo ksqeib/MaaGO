@@ -1,6 +1,6 @@
 # MaaCore 运行目录说明
 
-本文说明 `core/`、`base/` 和 `base/resource/` 的职责，以及从 `ksqeib/MaaCore` SDK 和 MAA 官方包中应该复制什么、不要复制什么。
+本文说明 `core/`、`base/` 和 `base/resource/` 的职责，以及从 `ksqeib/MaaCoreBuild` nightly SDK 和 MAA 官方包中应该复制什么、不要复制什么。
 
 ## 1. 目录总览
 
@@ -128,7 +128,7 @@ MaaGO 会把 `asst.log` 的新增内容镜像到：
 
 ## 5. 不要复制的内容
 
-从 `ksqeib/MaaCore` SDK 包中只需要 `bin/*.dll`。以下内容不要放进 `core/`：
+从 `ksqeib/MaaCoreBuild` nightly SDK 包中只需要 `bin/*.dll`。以下内容不要放进 `core/`：
 
 | 文件/目录 | 原因 |
 |---|---|
@@ -157,10 +157,10 @@ MaaGO 会把 `asst.log` 的新增内容镜像到：
 
 ```powershell
 # 从本地 SDK 包复制 bin/ 下的 DLL
-.\scripts\install-core.ps1 -Source "D:\tool\MaaCore-sdk" -AdbSource "D:\tool\platform-tools" -Version "v0.1.5"
+.\scripts\install-core.ps1 -Source "D:\tool\MaaCore-sdk" -AdbSource "D:\tool\platform-tools" -Version "nightly"
 
 # 从 GitHub 下载指定 SDK 版本
-.\scripts\update-core.ps1 -Version 0.1.5
+.\scripts\update-core.ps1 -Version nightly
 
 # 更新动态资源（合并到 base/resource/）
 .\scripts\update-resource.ps1

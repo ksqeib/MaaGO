@@ -166,3 +166,34 @@ func mustRead(t *testing.T, path string) string {
 	}
 	return string(data)
 }
+
+func TestReleaseVersionNightly(t *testing.T) {
+	body := "Nightly MaaCore SDK from upstream-sync nightly-20261105-528a563\nupstream-commit=528a563e27ee57175b1c80ab507fb0591cd7e6b4"
+	if got := releaseVersion("nightly", body, "2026-11-05T08:43:14Z"); got != "nightly-20261105-528a563" {
+		t.Fatalf("nightly version = %q", got)
+	}
+	if got := releaseVersion("nightly", "", "2026-11-05T08:43:14Z"); got != "nightly-20261105-084314" {
+		t.Fatalf("nightly fallback version = %q", got)
+	}
+	if got := releaseVersion("v0.1.5", body, ""); got != "v0.1.5" {
+		t.Fatalf("release version = %q", got)
+	}
+}
+
+func TestNightlyVersionSelection(t *testing.T) {
+	for _, value := range []string{"", "latest", "nightly", "nightly-20261105-528a563", "NIGHTLY"} {
+		if !isNightlyVersion(value) {
+			t.Fatalf("%q should resolve to nightly", value)
+		}
+	}
+	if isNightlyVersion("0.1.5") || isNightlyVersion("v0.1.5") {
+		t.Fatal("explicit releases must not resolve to nightly")
+	}
+	release := releaseForVersion("nightly")
+	if release.Tag != "nightly" || release.AssetName != "MaaCore-sdk-windows-x64-nightly.7z" {
+		t.Fatalf("unexpected nightly release: %+v", release)
+	}
+	if release.AssetURL != "https://github.com/ksqeib/MaaCoreBuild/releases/download/nightly/MaaCore-sdk-windows-x64-nightly.7z" {
+		t.Fatalf("unexpected nightly URL: %s", release.AssetURL)
+	}
+}

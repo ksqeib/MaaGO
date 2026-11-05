@@ -135,7 +135,8 @@ export const UpdateSettings = () => {
     if (!release) return null;
     return (
       <p className="mb-2 rounded-xl bg-surface-secondary/50 px-3 py-2 text-[11px] text-muted">
-        {t("settings.update.latest")}: <span className="font-semibold">{release.tag}</span>
+        {t("settings.update.latest")}:{" "}
+        <span className="font-semibold">{release.version || release.tag}</span>
         {release.size > 0 ? ` · ${formatBytes(release.size)}` : ""}
         {release.published ? ` · ${release.published}` : ""}
       </p>
@@ -273,9 +274,10 @@ export const UpdateSettings = () => {
         <SettingRow
           control={
             <span className="rounded-full bg-surface-secondary px-3 py-1 text-[11px] font-medium">
-              {core?.version || "—"}
+              {resourceVersions?.core || core?.version || "—"}
             </span>
           }
+          description={t("settings.update.core_current_hint")}
           title={t("settings.update.current")}
         />
         <SettingRow

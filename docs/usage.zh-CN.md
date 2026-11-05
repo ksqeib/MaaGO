@@ -11,7 +11,7 @@
 | 系统 | Windows 10/11 x64 |
 | WebView2 Runtime | Windows 11 通常自带；Windows 10 需要安装 Microsoft Edge WebView2 Runtime |
 | Visual C++ 运行库 | Microsoft Visual C++ 2015-2022 Redistributable (x64)，MaaCore 和 ONNX/OpenCV 依赖 |
-| MaaCore | `core/MaaCore.dll` 及同目录依赖 DLL（ksqeib/MaaCore SDK） |
+| MaaCore | `core/MaaCore.dll` 及同目录依赖 DLL（ksqeib/MaaCoreBuild nightly SDK） |
 | MAA 资源 | `base/resource/`，两套核心共用 |
 | ADB | `core/adb/adb.exe`，或设置中指定其他 `adb.exe` |
 | 模拟器/客户端 | MuMu、雷电、蓝叠、夜神、逍遥、WSA 等，或 MAA 支持的 PC 客户端 |
@@ -89,7 +89,7 @@ MaaGO/
 
 ### core 必须有
 
-以 `ksqeib/MaaCore` SDK 发布包 `bin/` 为准，目前是：
+以 `ksqeib/MaaCoreBuild` nightly SDK 发布包 `bin/` 为准，目前是：
 
 - `MaaCore.dll`
 - `MaaUtils.dll`
@@ -133,7 +133,7 @@ SDK 包里只需要 `bin/*.dll`。以下文件不属于 MaaGO：
 
 ## 4. 安装或更新 core
 
-MaaGO 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 SDK 发布包，只包含 `bin/` 下的 `MaaCore.dll`、`MaaUtils.dll` 和 `deps.json`，不包含第三方运行库和资源。第三方 DLL（OpenCV、ONNX Runtime、DirectML、FastDeploy）以及 `MaaWin32ControlUnit.dll` 会从旧 `core/` 保留，不会因为换核心而丢失。
+MaaGO 使用 [ksqeib/MaaCoreBuild](https://github.com/ksqeib/MaaCoreBuild/releases/tag/nightly) 的 nightly SDK 发布包（目前没有正式版本），只包含 `bin/` 下的 `MaaCore.dll`、`MaaUtils.dll` 和 `deps.json`，不包含第三方运行库和资源。我们使用的依赖库比 MAA 官方更新，所以自定义核心需要单独维护。第三方 DLL（OpenCV、ONNX Runtime、DirectML、FastDeploy）以及 `MaaWin32ControlUnit.dll` 会从旧 `core/` 保留，不会因为换核心而丢失。
 
 ### 方式 A：应用内更新（推荐）
 
@@ -141,12 +141,12 @@ MaaGO 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 S
 
 | 区域 | 操作 | 数据源 | 应用方式 |
 |---|---|---|---|
-| 核心更新 | 检查 / 下载并安装核心 | `ksqeib/MaaCore` Release（`.zip` 或 `.7z`） | 替换 `core/` 下的 DLL，保留旧 core 的第三方 DLL、控制组件和 `adb/` |
+| 核心更新 | 检查 / 下载并安装核心 | `ksqeib/MaaCoreBuild` 的 `nightly` Release（`.7z`） | 替换 `core/` 下的 DLL，保留旧 core 的第三方 DLL、控制组件和 `adb/` |
 | 资源底包更新 | 检查 / 下载并安装底包 | 官方 MAA Release 的 `MAA-v*-win-x64.zip` | **整体替换** `base/`（含官方核心和资源），写入 `base/.maago-base-version` |
 | 资源覆盖更新 | 检查 / 下载并安装覆盖 | `MaaResource` 主分支 | **合并**到 `base/resource/`，写入 `.maago-overlay-version` |
 
 1. 需要代理时先启用 HTTP 代理并填写地址，点“测试代理”。
-2. “核心更新”可留空目标版本使用最新 Release，或填写 `0.1.5`；点“检查更新”确认版本。
+2. “核心更新”留空目标版本使用 `nightly`；目前 `MaaCoreBuild` 没有正式版本，也可以填写指定版本。点“检查更新”确认 nightly 构建号（例如 `nightly-20261105-528a563`）。
 3. 点“下载并安装核心”，等待进度完成；点“重启并安装”后程序会在加载 MaaCore 前替换 DLL。
 4. 资源底包和资源覆盖分别在各自区域检查和下载。
 5. **一次只能暂存一项更新**：底包或覆盖下载完成后必须先重启应用，才能继续下一项。
@@ -171,7 +171,7 @@ MaaGO 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 S
 >
 > 运行库包只包含 `opencv_world4_maa.dll`、`onnxruntime_maa.dll`、`DirectML.dll`、`fastdeploy_ppocr_maa.dll`，不会覆盖 `MaaCore.dll`、`MaaUtils.dll` 或 `MaaWin32ControlUnit.dll`。
 >
-> 来源说明：运行库由 `ksqeib/MaaCore` 项目发布（MaaGO 使用的核心也来自同一项目），不是 MAA 官方发布包。MaaGO 以核心提供方的 `deps.json`、bundle SHA-256 和单文件 SHA-256 为准。
+> 来源说明：运行库由 `ksqeib/MaaCoreBuild` 项目发布（MaaGO 使用的核心也来自同一项目），不是 MAA 官方发布包。MaaGO 以核心提供方的 `deps.json`、bundle SHA-256 和单文件 SHA-256 为准。
 
 ### 方式 B：从本地 SDK 包复制
 
@@ -179,7 +179,7 @@ MaaGO 使用 [ksqeib/MaaCore](https://github.com/ksqeib/MaaCore/releases/) 的 S
 powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
   -Source "D:\tool\MaaCore-sdk" `
   -AdbSource "D:\tool\platform-tools" `
-  -Version "v0.1.5"
+  -Version "nightly"
 ```
 
 默认会复制 `bin/` 下的全部 DLL 和 `deps.json`，保留目标目录已有的第三方 DLL，不复制 `include/`、PDB 和资源。
@@ -188,19 +188,19 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-core.ps1 `
 
 ```powershell
 # 指定版本
-powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 -Version 0.1.5
+powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 -Version nightly
 
 # 自动取 latest
-powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 -Version latest
+powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 -Version nightly
 
 # 带代理
 powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 `
-  -Version 0.1.5 `
+  -Version nightly `
   -Proxy "http://127.0.0.1:7890"
 
 # 使用 GitHub 镜像前缀
 powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 `
-  -Version 0.1.5 `
+  -Version nightly `
   -Mirror "https://your-mirror.example/"
 ```
 
@@ -220,7 +220,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\update-core.ps1 `
 
 MaaGO 可以加载两种 MaaCore，在“设置 → 更新 → 核心来源”里切换，**重启后生效**：
 
-- **自定义核心**：`core/` 下的 ksqeib/MaaCore，由“核心更新”维护。
+- **自定义核心**：`core/` 下的 ksqeib/MaaCoreBuild nightly，由“核心更新”维护。
 - **官方核心**：`base/` 下的官方 MAA 完整包，`MaaCore.dll` 就在 `base/` 根目录，随“底包更新”一起替换。
 
 两套核心共用 `base/resource/`，所以切换核心不会复制或重建资源。
@@ -609,7 +609,7 @@ MaaGO = "<MaaGO.exe>" --autostart
 命令行脚本也支持同样的代理参数：
 
 ```powershell
-.\scripts\update-core.ps1 -Version 0.1.5 -Proxy "http://127.0.0.1:7890"
+.\scripts\update-core.ps1 -Version nightly -Proxy "http://127.0.0.1:7890"
 ```
 
 完整说明见 [proxy.zh-CN.md](./proxy.zh-CN.md)。

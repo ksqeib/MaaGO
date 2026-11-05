@@ -33,7 +33,7 @@ MaaGO 已经内置更新器：
 MaaGO 的 PowerShell 脚本使用 `-Proxy`，支持 HTTP/HTTPS 代理：
 
 ```powershell
-.\scripts\update-core.ps1 -Version 0.1.5 -Proxy "http://127.0.0.1:7890"
+.\scripts\update-core.ps1 -Version nightly -Proxy "http://127.0.0.1:7890"
 ```
 
 > PowerShell 的 `-Proxy` 不直接支持 SOCKS5。若只有 SOCKS5，使用应用内代理，或让代理软件同时开启 HTTP 端口。
@@ -52,7 +52,7 @@ $env:HTTP_PROXY
 ```powershell
 $env:HTTPS_PROXY = "http://127.0.0.1:7890"
 $env:HTTP_PROXY  = $env:HTTPS_PROXY
-.\scripts\update-core.ps1 -Version 0.1.5
+.\scripts\update-core.ps1 -Version nightly
 ```
 
 只在当前 PowerShell 窗口生效，不影响系统全局设置。
@@ -91,7 +91,7 @@ Windows 设置 → 网络和 Internet → 代理，可以设置系统级 HTTP/HT
 
 ```powershell
 .\scripts\update-core.ps1 `
-  -Version 0.1.5 `
+  -Version nightly `
   -Mirror "https://your-mirror.example/"
 ```
 

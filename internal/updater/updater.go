@@ -28,16 +28,18 @@ import (
 )
 
 const (
-	coreAPI       = "https://api.github.com/repos/ksqeib/MaaCore/releases/latest"
-	coreRepo      = "ksqeib/MaaCore"
-	maaReleaseAPI = "https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/releases/latest"
-	resourceURL   = "https://codeload.github.com/MaaAssistantArknights/MaaResource/zip/refs/heads/main"
-	userAgent     = "MaaGO-Updater"
+	coreRepo       = "ksqeib/MaaCoreBuild"
+	coreNightlyTag = "nightly"
+	coreAPI        = "https://api.github.com/repos/" + coreRepo + "/releases/tags/" + coreNightlyTag
+	maaReleaseAPI  = "https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/releases/latest"
+	resourceURL    = "https://codeload.github.com/MaaAssistantArknights/MaaResource/zip/refs/heads/main"
+	userAgent      = "MaaGO-Updater"
 )
 
 var (
-	coreAssetPattern = regexp.MustCompile(`^MaaCore-sdk-windows-x64-.*\.(zip|7z)$`)
-	maaAssetPattern  = regexp.MustCompile(`^MAA-v.+-win-x64\.zip$`)
+	coreAssetPattern    = regexp.MustCompile(`^MaaCore-sdk-windows-x64-.*\.(zip|7z)$`)
+	maaAssetPattern     = regexp.MustCompile(`^MAA-v.+-win-x64\.zip$`)
+	nightlyBuildPattern = regexp.MustCompile(`nightly-(\d{8})-([0-9a-fA-F]{7,40})`)
 )
 
 // ReleaseInfo describes one MaaCore release asset.
@@ -197,7 +199,7 @@ func (s *Service) Check(ctx context.Context) (ReleaseInfo, error) {
 		s.fail(err)
 		return ReleaseInfo{}, err
 	}
-	s.setStatus(Status{Stage: StageIdle, Message: "latest release " + release.Tag, Version: release.Tag})
+	s.setStatus(Status{Stage: StageIdle, Message: "latest release " + release.Version, Version: release.Version})
 	return release, nil
 }
 
@@ -225,8 +227,8 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 	}
 
 	var release ReleaseInfo
-	if version == "" || strings.EqualFold(version, "latest") {
-		s.setStatus(Status{Stage: StageChecking, Message: "resolving latest release"})
+	if isNightlyVersion(version) {
+		s.setStatus(Status{Stage: StageChecking, Message: "resolving nightly core"})
 		release, err = fetchLatest(ctx, client)
 	} else {
 		release, err = fetchCoreRelease(ctx, client, version)
@@ -237,7 +239,7 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 	}
 	release.AssetURL = withMirror(release.AssetURL, cfg.Update.Mirror)
 
-	stageRoot := filepath.Join(s.updates, "core-"+sanitize(release.Tag))
+	stageRoot := filepath.Join(s.updates, "core-"+sanitize(release.Version))
 	cleanStaging(s.updates)
 	_ = os.RemoveAll(stageRoot)
 	if err := os.MkdirAll(stageRoot, 0o755); err != nil {
@@ -248,19 +250,19 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 
 	s.setStatus(Status{
 		Stage:    StageDownload,
-		Message:  "downloading " + release.Tag,
-		Version:  release.Tag,
+		Message:  "downloading " + release.Version,
+		Version:  release.Version,
 		Total:    release.Size,
 		Progress: 0,
 	})
-	if err := s.download(ctx, client, release.AssetURL, zipPath, release.Tag, release.Size); err != nil {
+	if err := s.download(ctx, client, release.AssetURL, zipPath, release.Version, release.Size); err != nil {
 		s.fail(err)
 		return err
 	}
 
-	s.setStatus(Status{Stage: StageExtracting, Message: "extracting core", Version: release.Tag, Progress: 0})
+	s.setStatus(Status{Stage: StageExtracting, Message: "extracting core", Version: release.Version, Progress: 0})
 	stagingCore := filepath.Join(stageRoot, "core")
-	if err := extractCore(zipPath, stagingCore, release.Tag, s.setStatus); err != nil {
+	if err := extractCore(zipPath, stagingCore, release.Version, s.setStatus); err != nil {
 		s.fail(err)
 		return err
 	}
@@ -268,10 +270,20 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 		s.fail(err)
 		return err
 	}
+	if err := s.copyCompanionCoreFiles(stagingCore); err != nil {
+		s.fail(err)
+		return err
+	}
+	installedVersion := release.Version
 	if deps, ok, err := readCoreDependencies(stagingCore); err != nil {
 		s.fail(err)
 		return err
 	} else if ok {
+		// The nightly bundle records its exact build id in deps.json; prefer it
+		// over the id derived from the release notes.
+		if strings.TrimSpace(deps.MaaCore.Version) != "" {
+			installedVersion = strings.TrimSpace(deps.MaaCore.Version)
+		}
 		if err := s.ensureRuntime(ctx, client, stageRoot, stagingCore, deps, cfg.Update.Mirror); err != nil {
 			s.fail(err)
 			return err
@@ -284,7 +296,7 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 	if err := writePending(s.updates, pendingUpdate{
 		Kind:    "core",
 		Staging: stagingCore,
-		Version: release.Tag,
+		Version: installedVersion,
 	}); err != nil {
 		s.fail(err)
 		return err
@@ -292,8 +304,8 @@ func (s *Service) DownloadCore(ctx context.Context, version string) error {
 
 	s.setStatus(Status{
 		Stage:        StageReady,
-		Message:      "core " + release.Tag + " is ready; restart to install",
-		Version:      release.Tag,
+		Message:      "core " + installedVersion + " is ready; restart to install",
+		Version:      installedVersion,
 		Progress:     100,
 		NeedsRestart: true,
 	})
@@ -748,10 +760,40 @@ func fetchLatest(ctx context.Context, client *http.Client) (ReleaseInfo, error) 
 	return fetchRelease(ctx, client, coreAPI, coreAssetPattern)
 }
 
+func isNightlyVersion(version string) bool {
+	value := strings.ToLower(strings.TrimSpace(version))
+	return value == "" || value == "latest" || value == coreNightlyTag || strings.HasPrefix(value, coreNightlyTag+"-")
+}
+
 func fetchCoreRelease(ctx context.Context, client *http.Client, version string) (ReleaseInfo, error) {
-	tag := "v" + strings.TrimPrefix(strings.TrimSpace(version), "v")
+	tag := strings.TrimSpace(version)
+	if strings.HasPrefix(strings.ToLower(tag), coreNightlyTag) {
+		tag = coreNightlyTag
+	} else {
+		tag = "v" + strings.TrimPrefix(tag, "v")
+	}
 	api := "https://api.github.com/repos/" + coreRepo + "/releases/tags/" + tag
 	return fetchRelease(ctx, client, api, coreAssetPattern)
+}
+
+// releaseVersion returns the version marker stored in core/.maago-core-version.
+// The nightly release keeps the tag "nightly", so its build id comes from the
+// release notes (nightly-YYYYMMDD-<sha>) or the publish time.
+func releaseVersion(tag, body, published string) string {
+	if !strings.EqualFold(strings.TrimSpace(tag), coreNightlyTag) {
+		return tag
+	}
+	if match := nightlyBuildPattern.FindStringSubmatch(body); match != nil {
+		sha := strings.ToLower(match[2])
+		if len(sha) > 7 {
+			sha = sha[:7]
+		}
+		return coreNightlyTag + "-" + match[1] + "-" + sha
+	}
+	if timestamp, err := time.Parse(time.RFC3339, published); err == nil {
+		return coreNightlyTag + "-" + timestamp.UTC().Format("20060102-150405")
+	}
+	return tag
 }
 
 func fetchOfficialLatest(ctx context.Context, client *http.Client) (ReleaseInfo, error) {
@@ -775,6 +817,7 @@ func fetchRelease(ctx context.Context, client *http.Client, api string, pattern 
 	}
 	var payload struct {
 		TagName     string `json:"tag_name"`
+		Body        string `json:"body"`
 		PublishedAt string `json:"published_at"`
 		Assets      []struct {
 			Name string `json:"name"`
@@ -785,6 +828,7 @@ func fetchRelease(ctx context.Context, client *http.Client, api string, pattern 
 	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&payload); err != nil {
 		return ReleaseInfo{}, err
 	}
+	version := releaseVersion(payload.TagName, payload.Body, payload.PublishedAt)
 	for _, asset := range payload.Assets {
 		if strings.Contains(strings.ToLower(asset.Name), "symbols") {
 			continue
@@ -792,7 +836,7 @@ func fetchRelease(ctx context.Context, client *http.Client, api string, pattern 
 		if pattern.MatchString(asset.Name) {
 			return ReleaseInfo{
 				Tag:       payload.TagName,
-				Version:   payload.TagName,
+				Version:   version,
 				AssetName: asset.Name,
 				AssetURL:  asset.URL,
 				Size:      asset.Size,
@@ -804,8 +848,16 @@ func fetchRelease(ctx context.Context, client *http.Client, api string, pattern 
 }
 
 func releaseForVersion(version string) ReleaseInfo {
-	tag := "v" + strings.TrimPrefix(strings.TrimSpace(version), "v")
+	tag := strings.TrimSpace(version)
+	if strings.HasPrefix(strings.ToLower(tag), coreNightlyTag) {
+		tag = coreNightlyTag
+	} else {
+		tag = "v" + strings.TrimPrefix(tag, "v")
+	}
 	asset := "MaaCore-sdk-windows-x64-" + tag + ".zip"
+	if tag == coreNightlyTag {
+		asset = "MaaCore-sdk-windows-x64-nightly.7z"
+	}
 	return ReleaseInfo{
 		Tag:       tag,
 		Version:   tag,
@@ -1240,6 +1292,25 @@ func extractEntry(entry *zip.File, destination, relative string) error {
 	defer file.Close()
 	_, err = io.Copy(file, source)
 	return err
+}
+
+// copyCompanionCoreFiles fills in the control-unit DLLs from the official
+// package when a fresh core has no previous core to inherit them from.
+func (s *Service) copyCompanionCoreFiles(stagingCore string) error {
+	for _, name := range []string{"MaaAdbControlUnit.dll", "MaaWin32ControlUnit.dll"} {
+		target := filepath.Join(stagingCore, name)
+		if _, err := os.Stat(target); err == nil {
+			continue
+		}
+		source := filepath.Join(s.baseDir(), name)
+		if _, err := os.Stat(source); err != nil {
+			continue
+		}
+		if err := copyPath(source, target); err != nil {
+			return fmt.Errorf("copy %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func copyOptionalCoreFiles(sourceCore, stagingCore string) error {
