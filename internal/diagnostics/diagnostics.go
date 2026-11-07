@@ -353,11 +353,31 @@ func runRDP(
 	started = time.Now()
 	controlUnit := filepath.Join(core.Dir(), "MaaWin32ControlUnit.dll")
 	if _, err := os.Stat(controlUnit); err != nil {
-		add(StepProxy, StatusFail, "缺少 MaaWin32ControlUnit.dll；请从官方 MAA 发布包复制到 core\\", started)
+		add(StepProxy, StatusFail, "缺少 MaaWin32ControlUnit.dll；请重新安装 RDP 控制单元", started)
 		skipRest(StepConnect, StepSystem, StepScreenshot, StepTouch)
 		return finish()
 	}
-	add(StepProxy, StatusOK, fmt.Sprintf("HWND 0x%X · %s", session.HWND(), controlUnit), started)
+	if _, err := os.Stat(filepath.Join(core.Dir(), "MaaWin32ControlUnit.official.dll")); err != nil {
+		add(StepProxy, StatusFail, "当前 MaaWin32ControlUnit.dll 是官方版本；请运行 scripts\\install-rdp-controlunit.ps1 安装 RDP 控制单元", started)
+		skipRest(StepConnect, StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	bridge, err := rdp.StartBridge(session)
+	if err != nil {
+		add(StepProxy, StatusFail, err.Error(), started)
+		skipRest(StepConnect, StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	defer func() {
+		_ = os.Unsetenv("MAAGO_RDP_BRIDGE_ADDR")
+		bridge.Close()
+	}()
+	if err := os.Setenv("MAAGO_RDP_BRIDGE_ADDR", bridge.Addr()); err != nil {
+		add(StepProxy, StatusFail, fmt.Sprintf("设置控制桥环境变量失败：%v", err), started)
+		skipRest(StepConnect, StepSystem, StepScreenshot, StepTouch)
+		return finish()
+	}
+	add(StepProxy, StatusOK, fmt.Sprintf("无代理窗口 · 控制桥 %s", bridge.Addr()), started)
 
 	started = time.Now()
 	handle, err := core.Create()
@@ -378,12 +398,7 @@ func runRDP(
 	screencap, screencapLabel := win32.ParseScreencap("PrintWindow")
 	mouse, mouseLabel := win32.ParseMouse("PostMessage")
 	keyboard, keyboardLabel := win32.ParseKeyboard("SendMessage")
-	if err := rdp.InstallPrintWindowHook(filepath.Join(core.Dir(), "MaaWin32ControlUnit.dll")); err != nil {
-		add(StepConnect, StatusFail, fmt.Sprintf("PrintWindow 钩子安装失败：%v", err), started)
-		skipRest(StepSystem, StepScreenshot, StepTouch)
-		return finish()
-	}
-	attached, err := core.AttachWindow(handle, session.HWND(), screencap, mouse, keyboard)
+	attached, err := core.AttachWindow(handle, 0, screencap, mouse, keyboard)
 	if err != nil || !attached {
 		detail := "AsstAttachWindow 返回失败"
 		if err != nil {
@@ -393,8 +408,7 @@ func runRDP(
 		skipRest(StepSystem, StepScreenshot, StepTouch)
 		return finish()
 	}
-	add(StepConnect, StatusOK, fmt.Sprintf("RDP 代理窗口 · 截图 %s · 鼠标 %s · 键盘 %s", screencapLabel, mouseLabel, keyboardLabel), started)
-	session.EnsureVisible()
+	add(StepConnect, StatusOK, fmt.Sprintf("RDP 控制单元 · 截图 %s · 鼠标 %s · 键盘 %s", screencapLabel, mouseLabel, keyboardLabel), started)
 
 	started = time.Now()
 	add(StepSystem, StatusOK, fmt.Sprintf("%s@%s:%d · %dx%d", rc.Username, rc.Host, rc.Port, rc.Width, rc.Height), started)

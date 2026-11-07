@@ -163,6 +163,21 @@ try {
         Write-Warning "adb\adb.exe is not present. Pass -AdbSource <platform-tools dir> or copy ADB manually."
     }
 
+    # Re-apply the RDP control-unit shim. A fresh SDK contains the official
+    # MaaWin32ControlUnit.dll; keep it as the fallback and put the bridge DLL
+    # back in place so RDP mode stays headless.
+    $bridgeDll = Join-Path (Split-Path -Parent $PSScriptRoot) "bridge\MaaRDPControlUnit\build\Release\MaaWin32ControlUnit.dll"
+    $installedControlUnit = Join-Path $Destination "MaaWin32ControlUnit.dll"
+    if (Test-Path $bridgeDll) {
+        if (Test-Path $installedControlUnit) {
+            Copy-Item $installedControlUnit (Join-Path $Destination "MaaWin32ControlUnit.official.dll") -Force
+        }
+        Copy-Item $bridgeDll $installedControlUnit -Force
+        Write-Host "  installed RDP control-unit bridge"
+    } elseif (Test-Path $installedControlUnit) {
+        Write-Warning "RDP control-unit bridge is not built; run scripts\build-rdp-controlunit.ps1 and reinstall it."
+    }
+
     if (-not (Test-Path (Join-Path $resourceDir "version.json"))) {
         Write-Warning "resource\ is missing at $resourceDir. Run MaaGO once or install the base resource."
     }

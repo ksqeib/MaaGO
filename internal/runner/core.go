@@ -184,9 +184,20 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 				return
 			}
 			rdpSession = session
-			if err := rdp.InstallPrintWindowHook(filepath.Join(r.core.Dir(), "MaaWin32ControlUnit.dll")); err != nil {
-				r.SystemLog("warn", fmt.Sprintf("RDP PrintWindow 钩子安装失败：%v", err))
+			bridge, bridgeErr := rdp.StartBridge(session)
+			if bridgeErr != nil {
+				fail(bridgeErr.Error())
+				return
 			}
+			if err := os.Setenv("MAAGO_RDP_BRIDGE_ADDR", bridge.Addr()); err != nil {
+				bridge.Close()
+				fail(fmt.Sprintf("设置 RDP 控制桥环境变量失败：%v", err))
+				return
+			}
+			defer func() {
+				_ = os.Unsetenv("MAAGO_RDP_BRIDGE_ADDR")
+				bridge.Close()
+			}()
 			if rdpSession.UnlockIfLocked(cfg.Connection.RDP.Password) {
 				r.SystemLog("info", "已发送 RDP 解锁按键")
 			}
@@ -205,7 +216,7 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 			}
 			if r.coreLog != nil {
 				r.coreLog.Meta("rdp", fmt.Sprintf("%s@%s:%d", cfg.Connection.RDP.Username, cfg.Connection.RDP.Host, cfg.Connection.RDP.Port))
-				r.coreLog.Meta("rdp_window", fmt.Sprintf("0x%X", session.HWND()))
+				r.coreLog.Meta("rdp_bridge", bridge.Addr())
 			}
 		}
 	} else {
@@ -254,6 +265,12 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 			fail("缺少 MaaWin32ControlUnit.dll（PC 窗口控制组件），请从官方 MAA 发布包复制到 core\\")
 			return
 		}
+		if rdpMode {
+			if _, err := os.Stat(filepath.Join(r.core.Dir(), "MaaWin32ControlUnit.official.dll")); err != nil {
+				fail("RDP 控制单元未安装：请运行 scripts\\install-rdp-controlunit.ps1 -CoreDir <core 目录> 后重试")
+				return
+			}
+		}
 		var targetHWND uintptr
 		var screencap, mouse, keyboard uint64
 		var screencapLabel, mouseLabel, keyboardLabel string
@@ -264,15 +281,17 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 			keyboard, keyboardLabel = win32.ParseKeyboard(cfg.Connection.Win32.Keyboard)
 			r.SystemLog("info", fmt.Sprintf("绑定 PC 窗口：截图 %s，鼠标 %s，键盘 %s", screencapLabel, mouseLabel, keyboardLabel))
 		} else {
-			if rdpSession == nil || rdpSession.HWND() == 0 {
-				fail("RDP 预览窗口尚未创建")
+			if rdpSession == nil {
+				fail("RDP 会话尚未建立")
 				return
 			}
-			targetHWND = rdpSession.HWND()
-			screencap, screencapLabel = win32.ScreencapPrintWindow, "PrintWindow"
-			mouse, mouseLabel = win32.MousePostMessage, "PostMessage"
-			keyboard, keyboardLabel = win32.KeyboardSendMessage, "SendMessage"
-			r.SystemLog("info", fmt.Sprintf("绑定 RDP 代理窗口：截图 %s，鼠标 %s，键盘 %s", screencapLabel, mouseLabel, keyboardLabel))
+			// The custom control-unit DLL ignores the HWND and talks to the
+			// loopback bridge instead, so no local proxy window is needed.
+			targetHWND = 0
+			screencap, screencapLabel = win32.ScreencapPrintWindow, "RDP bridge"
+			mouse, mouseLabel = win32.MousePostMessage, "RDP bridge"
+			keyboard, keyboardLabel = win32.KeyboardSendMessage, "RDP bridge"
+			r.SystemLog("info", "绑定 RDP 控制单元（无代理窗口）")
 		}
 		if r.coreLog != nil {
 			r.coreLog.Meta("screencap", screencapLabel)
@@ -292,8 +311,7 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 			return
 		}
 		if rdpMode {
-			rdpSession.EnsureVisible()
-			r.SystemLog("success", "RDP 代理窗口绑定成功")
+			r.SystemLog("success", "RDP 控制单元绑定成功")
 		} else {
 			r.SystemLog("success", "PC 窗口绑定成功")
 		}

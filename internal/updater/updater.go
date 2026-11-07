@@ -1329,6 +1329,14 @@ func copyOptionalCoreFiles(sourceCore, stagingCore string) error {
 		if strings.HasPrefix(name, ".") || name == "resource" || name == "cache" {
 			continue
 		}
+		// MaaGO's RDP control-unit pair must survive core updates even when the
+		// SDK package also ships an official MaaWin32ControlUnit.dll.
+		if name == "MaaWin32ControlUnit.dll" || name == "MaaWin32ControlUnit.official.dll" {
+			if err := copyPath(filepath.Join(sourceCore, name), filepath.Join(stagingCore, name)); err != nil {
+				return err
+			}
+			continue
+		}
 		target := filepath.Join(stagingCore, name)
 		if _, err := os.Stat(target); err == nil {
 			continue

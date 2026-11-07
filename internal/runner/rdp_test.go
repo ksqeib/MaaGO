@@ -92,11 +92,19 @@ func TestRealRDPRun(t *testing.T) {
 	coreLogs := corelog.New(apppath.CoreLogsDir())
 	defer coreLogs.Close()
 
-	dir, err := filepath.Abs(filepath.Join("..", "..", "core"))
-	if err != nil {
-		t.Fatal(err)
+	dir := os.Getenv("MAAGO_TEST_CORE_DIR")
+	if dir == "" {
+		resolved, resolveErr := filepath.Abs(filepath.Join("..", "..", "core"))
+		if resolveErr != nil {
+			t.Fatal(resolveErr)
+		}
+		dir = resolved
 	}
-	core := maa.NewAt(dir)
+	resourceRoot := filepath.Dir(dir)
+	if _, statErr := os.Stat(filepath.Join(resourceRoot, "base", "resource")); statErr == nil {
+		resourceRoot = filepath.Join(resourceRoot, "base")
+	}
+	core := maa.NewAtWithResource(dir, resourceRoot)
 	if !core.Available() {
 		t.Skipf("MaaCore unavailable: %v", core.Err())
 	}

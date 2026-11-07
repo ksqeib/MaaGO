@@ -31,3 +31,15 @@ tasks:
     summary: Runs the application in development mode
     cmds:
       - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+
+  build:rdp-controlunit:
+    summary: Builds the custom MaaWin32ControlUnit used by RDP mode
+    cmds:
+      - powershell -ExecutionPolicy Bypass -File scripts/build-rdp-controlunit.ps1
+
+  install:rdp-controlunit:
+    summary: Installs the RDP control unit into a MaaCore directory
+    vars:
+      CORE_DIR: '{{.CORE_DIR | default "core"}}'
+    cmds:
+      - powershell -ExecutionPolicy Bypass -File scripts/install-rdp-controlunit.ps1 -CoreDir "{{.CORE_DIR}}"

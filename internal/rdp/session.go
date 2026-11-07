@@ -10,7 +10,6 @@ import (
 	"image"
 	"image/jpeg"
 	"image/png"
-	"math"
 	"net"
 	"os"
 	"strconv"
@@ -54,19 +53,15 @@ func (c Config) Key() string {
 	return fmt.Sprintf("%s:%d/%s/%dx%d", c.Host, c.Port, c.Username, c.Width, c.Height)
 }
 
-// Session owns one RDP connection and its local proxy window.
+// Session owns one RDP connection and its latest frame buffer.
 type Session struct {
-	cfg     Config
-	client  *gordp.Client
-	win     *proxyWindow
-	preview *previewWindow
+	cfg    Config
+	client *gordp.Client
+	frames *frameStore
 
 	writeMu sync.Mutex
 	closed  chan struct{}
 	once    sync.Once
-
-	firstFrame chan struct{}
-	frameOnce  sync.Once
 
 	errMu   sync.Mutex
 	lastErr error
@@ -97,20 +92,14 @@ func Open(cfg Config) (*Session, error) {
 		return nil, fmt.Errorf("RDP 连接/认证失败：%w", err)
 	}
 	s := &Session{
-		cfg:        cfg,
-		client:     client,
-		closed:     make(chan struct{}),
-		firstFrame: make(chan struct{}),
+		cfg:    cfg,
+		client: client,
+		frames: newFrameStore(),
+		closed: make(chan struct{}),
 	}
-	win, err := newProxyWindow(s)
-	if err != nil {
-		_ = client.Close()
-		return nil, err
-	}
-	s.win = win
 	go s.pump()
 	select {
-	case <-s.firstFrame:
+	case <-s.frames.first:
 	case <-time.After(15 * time.Second):
 		// Keep the session: some desktops only send the first full frame after
 		// an input event. Diagnostics reports whether a frame arrived.
@@ -139,7 +128,7 @@ func (s *Session) pump() {
 			return
 		}
 		if fb := s.client.Framebuffer(); fb != nil {
-			s.win.SetFrame(fb)
+			s.frames.set(fb)
 		}
 		select {
 		case <-s.closed:
@@ -174,70 +163,47 @@ func (s *Session) Err() error {
 	return s.lastErr
 }
 
-// HWND is the local proxy window that MaaCore attaches to.
-func (s *Session) HWND() uintptr {
-	if s.win == nil {
-		return 0
-	}
-	return s.win.HWND()
-}
+// HWND is kept for compatibility with older callers. RDP mode no longer
+// creates a local window; MaaCore talks to the custom control unit instead.
+func (s *Session) HWND() uintptr { return 0 }
 
-// HasFrame reports whether at least one remote frame has been painted.
+// HasFrame reports whether at least one remote frame has arrived.
 func (s *Session) HasFrame() bool {
-	select {
-	case <-s.firstFrame:
-		return true
-	default:
-		return false
-	}
+	return s.frames != nil && s.frames.hasFrame()
 }
 
 func (s *Session) Config() Config { return s.cfg }
 
-// Stats reports proxy paint/PrintWindow/input counters for diagnostics.
+// Stats is kept for diagnostics compatibility. The proxy window counters no
+// longer exist; the control-unit bridge reports its own state in the logs.
 func (s *Session) Stats() (paint, prints, stretch, empty, down, up, move int64) {
-	if s.win == nil {
-		return 0, 0, 0, 0, 0, 0, 0
-	}
-	return s.win.Stats()
+	return 0, 0, 0, 0, 0, 0, 0
 }
 
 // DesktopSize is the remote desktop size requested from the server.
 func (s *Session) DesktopSize() (int, int) { return s.cfg.Width, s.cfg.Height }
 
-// Show brings the local preview window to the foreground.
-func (s *Session) Show() {
-	if s.preview != nil {
-		s.preview.Show()
-	}
-}
+// Show is a no-op without a native preview window.
+func (s *Session) Show() {}
 
-// EnsureVisible repositions the small preview window without taking focus.
-func (s *Session) EnsureVisible() {
-	if s.preview != nil {
-		s.preview.position()
-	}
-}
+// EnsureVisible is a no-op without a native preview window.
+func (s *Session) EnsureVisible() {}
 
-// SaveFrame writes the last converted frame as a PNG. It is a debugging aid for
-// the proxy pipeline and for diagnosing a black or white capture.
+// SaveFrame writes the last converted frame as a PNG. It is a debugging aid
+// for diagnosing a black or white capture.
 func (s *Session) SaveFrame(path string) error {
-	if s.win == nil {
-		return fmt.Errorf("window is not ready")
-	}
-	s.win.frameMu.RLock()
-	defer s.win.frameMu.RUnlock()
-	if len(s.win.frame) == 0 || s.win.frameW <= 0 || s.win.frameH <= 0 {
+	src, w, h := s.frames.snapshot()
+	if src == nil {
 		return fmt.Errorf("no frame received yet")
 	}
-	img := image.NewRGBA(image.Rect(0, 0, s.win.frameW, s.win.frameH))
-	for y := 0; y < s.win.frameH; y++ {
-		src := s.win.frame[y*s.win.frameW*4 : (y+1)*s.win.frameW*4]
-		dst := img.Pix[y*img.Stride : y*img.Stride+s.win.frameW*4]
-		for x := 0; x < s.win.frameW; x++ {
-			dst[x*4] = src[x*4+2]
-			dst[x*4+1] = src[x*4+1]
-			dst[x*4+2] = src[x*4]
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		row := src[y*w*4 : (y+1)*w*4]
+		dst := img.Pix[y*img.Stride : y*img.Stride+w*4]
+		for x := 0; x < w; x++ {
+			dst[x*4] = row[x*4+2]
+			dst[x*4+1] = row[x*4+1]
+			dst[x*4+2] = row[x*4]
 			dst[x*4+3] = 255
 		}
 	}
@@ -255,46 +221,10 @@ func (s *Session) SaveFrame(path string) error {
 // FrameStd returns the luminance standard deviation of the latest frame. A
 // locked or powered-off desktop is nearly uniform; a game screen is not.
 func (s *Session) FrameStd() float64 {
-	if s.win == nil {
+	if s.frames == nil {
 		return 0
 	}
-	s.win.frameMu.RLock()
-	defer s.win.frameMu.RUnlock()
-	w, h := s.win.frameW, s.win.frameH
-	if len(s.win.frame) == 0 || w <= 0 || h <= 0 {
-		return 0
-	}
-	stepX := w / 80
-	if stepX < 1 {
-		stepX = 1
-	}
-	stepY := h / 45
-	if stepY < 1 {
-		stepY = 1
-	}
-	var sum, sum2 float64
-	var n float64
-	for y := 0; y < h; y += stepY {
-		for x := 0; x < w; x += stepX {
-			i := (y*w + x) * 4
-			b := float64(s.win.frame[i])
-			g := float64(s.win.frame[i+1])
-			r := float64(s.win.frame[i+2])
-			lum := 0.299*r + 0.587*g + 0.114*b
-			sum += lum
-			sum2 += lum * lum
-			n++
-		}
-	}
-	if n == 0 {
-		return 0
-	}
-	mean := sum / n
-	variance := sum2/n - mean*mean
-	if variance < 0 {
-		variance = 0
-	}
-	return math.Sqrt(variance)
+	return s.frames.standardDeviation()
 }
 
 // LooksLocked reports whether the latest frame looks like a lock screen or a
@@ -492,18 +422,10 @@ func (s *Session) CloseArknights() error {
 // SnapshotJPEG encodes the latest frame, downscaled to maxWidth. It is used by
 // the in-app preview; MaaCore itself uses the full-resolution frame.
 func (s *Session) SnapshotJPEG(maxWidth, quality int) ([]byte, int, int, error) {
-	if s.win == nil {
-		return nil, 0, 0, fmt.Errorf("RDP 预览窗口未就绪")
-	}
-	s.win.frameMu.RLock()
-	fw, fh := s.win.frameW, s.win.frameH
-	if len(s.win.frame) == 0 || fw <= 0 || fh <= 0 {
-		s.win.frameMu.RUnlock()
+	src, fw, fh := s.frames.snapshot()
+	if src == nil || fw <= 0 || fh <= 0 {
 		return nil, 0, 0, fmt.Errorf("尚未收到远端画面")
 	}
-	src := make([]byte, fw*fh*4)
-	copy(src, s.win.frame)
-	s.win.frameMu.RUnlock()
 
 	if maxWidth <= 0 || maxWidth > fw {
 		maxWidth = fw
@@ -595,18 +517,12 @@ func (s *Session) Close() error {
 		if s.client != nil {
 			err = s.client.Close()
 		}
-		if s.preview != nil {
-			s.preview.Close()
-		}
-		if s.win != nil {
-			s.win.Close()
-		}
 	})
 	return err
 }
 
-// Input helpers used by the proxy window. All writes are serialized because
-// the RDP client expects one fast-path writer.
+// Input helpers used by the control-unit bridge. All writes are serialized
+// because the RDP client expects one fast-path writer.
 func (s *Session) click(x, y uint16) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()

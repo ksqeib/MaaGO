@@ -56,6 +56,19 @@ if ($Version) {
     Set-Content -Path (Join-Path $Destination ".maago-core-version") -Value $Version -NoNewline -Encoding ascii
 }
 
+# Keep the official control unit as a fallback and apply MaaGO's RDP bridge.
+$bridgeDll = Join-Path (Split-Path -Parent $PSScriptRoot) "bridge\MaaRDPControlUnit\build\Release\MaaWin32ControlUnit.dll"
+$installedControlUnit = Join-Path $Destination "MaaWin32ControlUnit.dll"
+if (Test-Path $bridgeDll) {
+    if (Test-Path $installedControlUnit) {
+        Copy-Item $installedControlUnit (Join-Path $Destination "MaaWin32ControlUnit.official.dll") -Force
+    }
+    Copy-Item $bridgeDll $installedControlUnit -Force
+    Write-Output "RDP control-unit bridge installed."
+} elseif (Test-Path $installedControlUnit) {
+    Write-Warning "RDP control-unit bridge is not built; run scripts\build-rdp-controlunit.ps1 and reinstall it."
+}
+
 if ($AdbSource) {
     $adbTarget = Join-Path $Destination "adb"
     New-Item -ItemType Directory -Force $adbTarget | Out-Null

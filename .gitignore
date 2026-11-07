@@ -12,6 +12,9 @@
 # Go
 *.test
 *.out
+
+# RDP control-unit build output
+/bridge/MaaRDPControlUnit/build/
 /.task/
 /.maago-updates/
 /core.backup/

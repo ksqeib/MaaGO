@@ -45,14 +45,27 @@ func TestRDPProxyShot(t *testing.T) {
 	}
 	time.Sleep(2 * time.Second)
 
-	coreDir, err := filepath.Abs(filepath.Join("..", "..", "core"))
+	coreDir := os.Getenv("MAAGO_TEST_CORE_DIR")
+	if coreDir == "" {
+		coreDir, err = filepath.Abs(filepath.Join("..", "..", "core"))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	bridge, err := rdp.StartBridge(session)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rdp.InstallPrintWindowHook(filepath.Join(coreDir, "MaaWin32ControlUnit.dll")); err != nil {
-		t.Logf("PrintWindow hook: %v", err)
+	defer bridge.Close()
+	if err := os.Setenv("MAAGO_RDP_BRIDGE_ADDR", bridge.Addr()); err != nil {
+		t.Fatal(err)
 	}
-	core := maa.NewAt(coreDir)
+	defer os.Unsetenv("MAAGO_RDP_BRIDGE_ADDR")
+	resourceRoot := filepath.Dir(coreDir)
+	if _, statErr := os.Stat(filepath.Join(resourceRoot, "base", "resource")); statErr == nil {
+		resourceRoot = filepath.Join(resourceRoot, "base")
+	}
+	core := maa.NewAtWithResource(coreDir, resourceRoot)
 	if !core.Available() {
 		t.Skipf("MaaCore unavailable: %v", core.Err())
 	}
@@ -76,9 +89,9 @@ func TestRDPProxyShot(t *testing.T) {
 	defer core.Destroy(handle)
 
 	screencap, _ := win32.ParseScreencap("PrintWindow")
-	mouse, _ := win32.ParseMouse("PostMessageWithWindowPos")
+	mouse, _ := win32.ParseMouse("PostMessage")
 	keyboard, _ := win32.ParseKeyboard("SendMessage")
-	attached, err := core.AttachWindow(handle, session.HWND(), screencap, mouse, keyboard)
+	attached, err := core.AttachWindow(handle, 0, screencap, mouse, keyboard)
 	if err != nil || !attached {
 		t.Fatalf("attach: attached=%v err=%v", attached, err)
 	}
@@ -94,6 +107,9 @@ func TestRDPProxyShot(t *testing.T) {
 	shot := filepath.Join(os.TempDir(), "maago-rdp-proxy-shot.png")
 	if err := os.WriteFile(shot, buf[:size], 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if id, err := core.AsyncClick(handle, 5, 700, true); err != nil || id == 0 {
+		t.Fatalf("bridge click: id=%d err=%v", id, err)
 	}
 	frame := filepath.Join(os.TempDir(), "maago-rdp-frame.png")
 	if err := session.SaveFrame(frame); err != nil {

@@ -12,6 +12,8 @@ core/                          # ksqeib/MaaCore SDK
 ├── fastdeploy_ppocr_maa.dll
 ├── onnxruntime_maa.dll
 ├── opencv_world4_maa.dll
+├── MaaWin32ControlUnit.dll          # MaaGO RDP bridge (or official when not installed)
+├── MaaWin32ControlUnit.official.dll # original DLL used by local Win32 mode
 ├── .maago-core-version
 └── adb/
     ├── adb.exe
@@ -35,6 +37,11 @@ powershell -ExecutionPolicy Bypass -File ..\scripts\install-core.ps1 `
   -AdbSource "D:\tool\platform-tools" `
   -Version "v0.1.1"
 ```
+
+After a core update, rerun `scripts/install-rdp-controlunit.ps1` if RDP mode
+reports a missing or non-bridge `MaaWin32ControlUnit.dll`. The installer keeps
+the official DLL as `MaaWin32ControlUnit.official.dll`, so local Win32 mode
+continues to work through the bridge's fallback.
 
 The launcher looks for `core/` in this order:
 

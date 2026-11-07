@@ -596,9 +596,6 @@ func (s *Service) ConnectRDP() (RDPPreview, error) {
 	if err != nil {
 		return RDPPreview{Host: rc.Host, Username: rc.Username, Width: rc.Width, Height: rc.Height, Error: err.Error()}, err
 	}
-	if s.core != nil {
-		_ = rdp.InstallPrintWindowHook(filepath.Join(s.core.Dir(), "MaaWin32ControlUnit.dll"))
-	}
 	session.UnlockIfLocked(rc.Password)
 	session.CenterPointer()
 	return s.GetRDPPreview(640), nil

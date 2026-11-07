@@ -23,7 +23,7 @@ MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArkn
   - 实时日志、运行进度、停止任务
 - 日志页：级别过滤、搜索、自动滚动、清空、打开日志目录 / 核心日志 / 失败截图
 - 设置页
-  - 连接：ADB 地址、自动检测、模拟器端口扫描、ADB 路径、触控模式、截图增强；Win32 窗口模式（PC 客户端、截图/鼠标/键盘方式）；RDP 远程机器模式（NLA 连接、本机代理预览窗、截图/输入转发）
+  - 连接：ADB 地址、自动检测、模拟器端口扫描、ADB 路径、触控模式、截图增强；Win32 窗口模式（PC 客户端、截图/鼠标/键盘方式）；RDP 远程机器模式（NLA 连接、内嵌预览、自定义控制单元；不创建代理窗口）
   - 运行：客户端类型、阻止休眠、屏幕常亮、开机启动、运行时长上限
   - 性能：OCR 推理设备（CPU / GPU DirectML）、GPU 设备号，重启生效
   - 定时：可添加多个每天执行时间点，每个时间点单独设置星期和强制重启，支持开始前通知
@@ -211,6 +211,15 @@ wails3 task dev        # Wails 开发模式
 构建产物在 `bin/MaaGO.exe`。
 
 > `task build` 生成的 EXE 使用 Windows GUI 子系统；需要看控制台日志时请用 `task run`（或 `go run . --debug`）。
+
+RDP 模式需要一个自定义的 `MaaWin32ControlUnit.dll`（无代理窗口，走本地控制桥；源码工程名为 `MaaRDPControlUnit`，产物名受 MaaCore 硬编码限制）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-rdp-controlunit.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-rdp-controlunit.ps1 -CoreDir D:\tool\maago\core
+```
+
+安装脚本会把官方 DLL 保留为 `MaaWin32ControlUnit.official.dll`；本机 Win32 模式会自动转发到它。
 
 ## 数据位置
 
