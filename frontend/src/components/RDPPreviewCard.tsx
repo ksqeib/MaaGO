@@ -53,7 +53,8 @@ export const RDPPreviewCard = () => {
       }
     };
     void load();
-    timer = window.setInterval(load, 500);
+    // The enlarged view is used for operating the remote, so refresh it faster.
+    timer = window.setInterval(load, maxWidth >= 1280 ? 250 : 500);
     return () => {
       alive = false;
       window.clearInterval(timer);

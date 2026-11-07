@@ -10,6 +10,16 @@ MaaGO 是一个使用 **Go + Wails v3 + React** 编写的 MAA（MaaAssistantArkn
 - [core 运行目录清单](./docs/core-runtime.zh-CN.md)
 - [代理与下载说明](./docs/proxy.zh-CN.md)
 
+## Nightly
+
+GitHub Actions 每天 **04:00（Asia/Shanghai）** 检查一次源码；只有 `main.go`、`internal/`、`frontend/`、`bridge/`、`build/`、`scripts/`、`Taskfile.yml` 等程序代码相对上一次 nightly 有变化时才构建。只改 `docs/` 或 README 会跳过，不会空跑。
+
+下载 `nightly` Release 里的 `MaaGO-nightly-windows-x64.zip`，解压后运行 `MaaGO.exe`。包内已经包含：
+
+- `MaaGO.exe`
+- `core/`：MaaCore nightly、运行库、ADB、RDP 控制单元
+- `base/`：官方 MAA 底包和最新的 MaaResource 覆盖
+
 ## 功能
 
 - Wails v3 无边框窗口、自绘标题栏、窗口尺寸持久化

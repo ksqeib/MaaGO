@@ -6,15 +6,15 @@ import (
 	"sync"
 )
 
-// frameStore keeps the latest remote frame in BGRA order, which is what the
-// Win32 control-unit ABI expects from a 32-bit DIB. It replaces the old hidden
-// proxy window: MaaCore no longer needs an HWND, and the frame never has to be
-// painted onto the local desktop.
+// frameStore keeps the latest remote frame as 3-channel BGR. MaaCore's Win32
+// control-unit ABI expects BGR (the official screencaps call bgra_to_bgr()),
+// and its OCR path silently returns empty results when given 4-channel BGRA.
 type frameStore struct {
 	mu   sync.RWMutex
 	data []byte
 	w    int
 	h    int
+	seq  uint64
 
 	firstOnce sync.Once
 	first     chan struct{}
@@ -33,7 +33,7 @@ func (f *frameStore) set(img *image.RGBA) {
 	if fw <= 0 || fh <= 0 {
 		return
 	}
-	need := fw * fh * 4
+	need := fw * fh * 3
 	f.mu.Lock()
 	if cap(f.data) < need {
 		f.data = make([]byte, need)
@@ -42,17 +42,24 @@ func (f *frameStore) set(img *image.RGBA) {
 	}
 	for y := 0; y < fh; y++ {
 		src := img.Pix[y*img.Stride : y*img.Stride+fw*4]
-		dst := f.data[y*fw*4 : (y+1)*fw*4]
+		dst := f.data[y*fw*3 : (y+1)*fw*3]
 		for x := 0; x < fw; x++ {
-			dst[x*4] = src[x*4+2]
-			dst[x*4+1] = src[x*4+1]
-			dst[x*4+2] = src[x*4]
-			dst[x*4+3] = 255
+			dst[x*3] = src[x*4+2]
+			dst[x*3+1] = src[x*4+1]
+			dst[x*3+2] = src[x*4]
 		}
 	}
 	f.w, f.h = fw, fh
+	f.seq++
 	f.mu.Unlock()
 	f.firstOnce.Do(func() { close(f.first) })
+}
+
+// version increases whenever a new remote frame has been applied.
+func (f *frameStore) version() uint64 {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.seq
 }
 
 func (f *frameStore) hasFrame() bool {
@@ -96,7 +103,7 @@ func (f *frameStore) standardDeviation() float64 {
 	var count int
 	for y := 0; y < h; y += stepY {
 		for x := 0; x < w; x += stepX {
-			i := (y*w + x) * 4
+			i := (y*w + x) * 3
 			b := float64(f.data[i])
 			g := float64(f.data[i+1])
 			r := float64(f.data[i+2])

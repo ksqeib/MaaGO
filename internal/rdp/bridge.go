@@ -13,7 +13,7 @@ import (
 
 // The custom MaaWin32ControlUnit.dll talks to this loopback server instead of
 // owning a local proxy window. Commands are tiny; screencap is the only large
-// payload (one BGRA frame per capture).
+// payload (one 3-channel BGR frame per capture).
 const (
 	opConnect byte = iota + 1
 	opConnected
@@ -34,10 +34,20 @@ const (
 	opStopApp
 )
 
+// bridgeInput is the subset of Session used for pointer input. It is an
+// interface so the click/drag state machine can be tested without a live RDP
+// connection.
+type bridgeInput interface {
+	click(x, y uint16)
+	mouseButton(button gordp.MouseButton, down bool, x, y uint16)
+	mouseMove(x, y uint16)
+}
+
 // Bridge serves one MaaCore control unit over loopback TCP.
 type Bridge struct {
 	listener net.Listener
 	session  *Session
+	input    bridgeInput
 
 	mu   sync.Mutex
 	conn net.Conn
@@ -57,6 +67,7 @@ func StartBridge(session *Session) (*Bridge, error) {
 	b := &Bridge{
 		listener: ln,
 		session:  session,
+		input:    session,
 		done:     make(chan struct{}),
 	}
 	go b.acceptLoop()
@@ -112,9 +123,21 @@ func (b *Bridge) acceptLoop() {
 }
 
 type bridgeInputState struct {
-	down  bool
-	lastX uint16
-	lastY uint16
+	down   bool
+	moved  bool
+	startX uint16
+	startY uint16
+	lastX  uint16
+	lastY  uint16
+}
+
+// input returns the pointer sink, falling back to the session when the bridge
+// was constructed directly (tests).
+func (b *Bridge) inputSink() bridgeInput {
+	if b.input != nil {
+		return b.input
+	}
+	return b.session
 }
 
 func (b *Bridge) serve(conn net.Conn) {
@@ -131,7 +154,7 @@ func (b *Bridge) serve(conn net.Conn) {
 	}
 }
 
-func (b *Bridge) handle(conn net.Conn, op byte, state *bridgeInputState) error {
+func (b *Bridge) handle(conn io.ReadWriter, op byte, state *bridgeInputState) error {
 	switch op {
 	case opConnect:
 		return writeBool(conn, b.session.Alive())
@@ -164,7 +187,7 @@ func (b *Bridge) handle(conn net.Conn, op byte, state *bridgeInputState) error {
 		if err != nil {
 			return err
 		}
-		b.session.click(x, y)
+		b.inputSink().click(x, y)
 		return writeBool(conn, true)
 	case opSwipe:
 		x1, y1, x2, y2, duration, err := readSwipe(conn)
@@ -178,29 +201,47 @@ func (b *Bridge) handle(conn net.Conn, op byte, state *bridgeInputState) error {
 		if err != nil {
 			return err
 		}
+		// Match the previous working proxy path: move the remote pointer first
+		// (so hover state updates), but do not press yet. The tap itself is
+		// delivered as one fast-path PDU on touch_up. Windows/the game ignores
+		// a down and an up that arrive in separate PDUs.
 		state.down = true
+		state.moved = false
+		state.startX, state.startY = x, y
 		state.lastX, state.lastY = x, y
-		b.session.mouseButton(gordp.ButtonLeft, true, x, y)
+		b.inputSink().mouseMove(x, y)
 		return writeBool(conn, true)
 	case opTouchMove:
 		x, y, err := readPoint(conn)
 		if err != nil {
 			return err
 		}
-		state.lastX, state.lastY = x, y
 		if state.down {
-			b.session.mouseButton(gordp.ButtonLeft, true, x, y)
+			if !state.moved {
+				// Enter drag mode at the original press point.
+				b.inputSink().mouseButton(gordp.ButtonLeft, true, state.startX, state.startY)
+				state.moved = true
+			}
+			b.inputSink().mouseButton(gordp.ButtonLeft, true, x, y)
 		} else {
-			b.session.mouseMove(x, y)
+			// Screencap cursor parking: no button involved.
+			b.inputSink().mouseMove(x, y)
 		}
+		state.lastX, state.lastY = x, y
 		return writeBool(conn, true)
 	case opTouchUp:
 		if _, err := readUint32(conn); err != nil {
 			return err
 		}
 		if state.down {
-			b.session.mouseButton(gordp.ButtonLeft, false, state.lastX, state.lastY)
+			if state.moved {
+				b.inputSink().mouseButton(gordp.ButtonLeft, false, state.lastX, state.lastY)
+			} else {
+				// click() writes move, down and up in a single fast-path PDU.
+				b.inputSink().click(state.startX, state.startY)
+			}
 			state.down = false
+			state.moved = false
 		}
 		return writeBool(conn, true)
 	case opKeyDown:

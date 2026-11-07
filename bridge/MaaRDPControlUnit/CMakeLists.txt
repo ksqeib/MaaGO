@@ -31,13 +31,16 @@ set_target_properties(MaaRDPControlUnit PROPERTIES
     PREFIX ""
 )
 
-add_executable(MaaRDPControlUnitTest test_abi.cpp)
-target_include_directories(MaaRDPControlUnitTest PRIVATE
-    "${OPENCV_ROOT}/include/opencv4"
-    "${MAA_CORE_DIR}"
-    "${MAA_CORE_DIR}/../MaaUtils/include"
-)
-target_link_libraries(MaaRDPControlUnitTest PRIVATE
-    "${OPENCV_ROOT}/lib/opencv_world4.lib"
-    ws2_32
-)
+option(MAA_BUILD_CONTROLUNIT_TESTS "Build the ABI/protocol test" ON)
+if(MAA_BUILD_CONTROLUNIT_TESTS)
+    add_executable(MaaRDPControlUnitTest test_abi.cpp)
+    target_include_directories(MaaRDPControlUnitTest PRIVATE
+        "${OPENCV_ROOT}/include/opencv4"
+        "${MAA_CORE_DIR}"
+        "${MAA_CORE_DIR}/../MaaUtils/include"
+    )
+    target_link_libraries(MaaRDPControlUnitTest PRIVATE
+        "${OPENCV_ROOT}/lib/opencv_world4.lib"
+        ws2_32
+    )
+endif()

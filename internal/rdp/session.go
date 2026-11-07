@@ -66,6 +66,16 @@ type Session struct {
 	errMu   sync.Mutex
 	lastErr error
 
+	// Cached preview JPEG. The dashboard polls every few hundred ms while most
+	// screens are static, so re-encoding an unchanged frame is wasted CPU.
+	previewMu      sync.Mutex
+	previewSeq     uint64
+	previewWidth   int
+	previewQuality int
+	previewData    []byte
+	previewW       int
+	previewH       int
+
 	pointerDirty atomic.Bool
 }
 
@@ -114,21 +124,28 @@ func (s *Session) pump() {
 			return
 		default:
 		}
-		if _, err := func() (int, error) {
+		// PumpFrame waits for the first update, then applies the rest of the
+		// burst until the server pauses. PumpUpdates would expose a 50ms time
+		// slice as a "frame"; during animations that slice is only half of a
+		// refresh and the preview/recognition sees torn, doubled content.
+		rects, err := func() (int, error) {
 			// gordp writes fast-path input directly to the TLS connection. Serialize
 			// it with the pump so input and frame acknowledgements cannot interleave.
 			s.writeMu.Lock()
 			defer s.writeMu.Unlock()
-			return s.client.PumpUpdates(50 * time.Millisecond)
-		}(); err != nil {
+			return s.client.PumpFrame(50 * time.Millisecond)
+		}()
+		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "timeout") {
 				continue
 			}
 			s.fail(err)
 			return
 		}
-		if fb := s.client.Framebuffer(); fb != nil {
-			s.frames.set(fb)
+		if rects > 0 {
+			if fb := s.client.Framebuffer(); fb != nil {
+				s.frames.set(fb)
+			}
 		}
 		select {
 		case <-s.closed:
@@ -198,12 +215,12 @@ func (s *Session) SaveFrame(path string) error {
 	}
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
-		row := src[y*w*4 : (y+1)*w*4]
+		row := src[y*w*3 : (y+1)*w*3]
 		dst := img.Pix[y*img.Stride : y*img.Stride+w*4]
 		for x := 0; x < w; x++ {
-			dst[x*4] = row[x*4+2]
-			dst[x*4+1] = row[x*4+1]
-			dst[x*4+2] = row[x*4]
+			dst[x*4] = row[x*3+2]
+			dst[x*4+1] = row[x*3+1]
+			dst[x*4+2] = row[x*3]
 			dst[x*4+3] = 255
 		}
 	}
@@ -379,17 +396,6 @@ func (s *Session) runCommand(command string, elevated bool) error {
 	s.key(0x1C, true, false)
 	s.key(0x1C, false, false)
 	time.Sleep(900 * time.Millisecond)
-
-	// Minimize Task Manager so it does not cover the game or MaaCore's next
-	// screenshot. Alt+Space -> N is the standard window-menu shortcut.
-	s.key(0x38, true, false)  // Alt
-	s.key(0x39, true, false)  // Space
-	s.key(0x39, false, false) // Space up
-	s.key(0x38, false, false) // Alt up
-	time.Sleep(250 * time.Millisecond)
-	s.key(0x31, true, false)  // N
-	s.key(0x31, false, false) // N up
-	time.Sleep(400 * time.Millisecond)
 	return nil
 }
 
@@ -401,7 +407,7 @@ func (s *Session) LaunchArknights(gamePath string) error {
 		return fmt.Errorf("RDP 游戏路径为空")
 	}
 	command := fmt.Sprintf(
-		`powershell -NoProfile -Command "if (-not (Get-Process Arknights -ErrorAction SilentlyContinue)) { Start-Process '%s' }"`,
+		`powershell -NoProfile -Command "if (-not (Get-Process Arknights -ErrorAction SilentlyContinue)) { Start-Process '%s' }; Stop-Process -Name Taskmgr -Force -ErrorAction SilentlyContinue"`,
 		strings.ReplaceAll(gamePath, "'", "''"),
 	)
 	if err := s.runCommand(command, true); err != nil {
@@ -416,12 +422,26 @@ func (s *Session) LaunchArknights(gamePath string) error {
 // CloseArknights force-closes the PC client. The game normally runs elevated,
 // so taskkill is launched from an elevated Task Manager task.
 func (s *Session) CloseArknights() error {
-	return s.runCommand(`cmd /c taskkill /IM Arknights.exe /F`, true)
+	return s.runCommand(`cmd /c taskkill /IM Arknights.exe /F & taskkill /IM Taskmgr.exe /F`, true)
 }
 
 // SnapshotJPEG encodes the latest frame, downscaled to maxWidth. It is used by
 // the in-app preview; MaaCore itself uses the full-resolution frame.
 func (s *Session) SnapshotJPEG(maxWidth, quality int) ([]byte, int, int, error) {
+	if quality <= 0 {
+		quality = 70
+	}
+	seq := s.frames.version()
+
+	s.previewMu.Lock()
+	if s.previewData != nil && s.previewSeq == seq &&
+		s.previewWidth == maxWidth && s.previewQuality == quality {
+		data, w, h := s.previewData, s.previewW, s.previewH
+		s.previewMu.Unlock()
+		return data, w, h, nil
+	}
+	s.previewMu.Unlock()
+
 	src, fw, fh := s.frames.snapshot()
 	if src == nil || fw <= 0 || fh <= 0 {
 		return nil, 0, 0, fmt.Errorf("尚未收到远端画面")
@@ -443,7 +463,7 @@ func (s *Session) SnapshotJPEG(maxWidth, quality int) ([]byte, int, int, error) 
 		sy := y * fh / nh
 		for x := 0; x < nw; x++ {
 			sx := x * fw / nw
-			si := (sy*fw + sx) * 4
+			si := (sy*fw + sx) * 3
 			di := y*img.Stride + x*4
 			img.Pix[di] = src[si+2]
 			img.Pix[di+1] = src[si+1]
@@ -451,21 +471,33 @@ func (s *Session) SnapshotJPEG(maxWidth, quality int) ([]byte, int, int, error) 
 			img.Pix[di+3] = 255
 		}
 	}
-	if quality <= 0 {
-		quality = 70
-	}
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
 		return nil, 0, 0, err
 	}
-	return buf.Bytes(), nw, nh, nil
+	data := buf.Bytes()
+
+	s.previewMu.Lock()
+	s.previewSeq = seq
+	s.previewWidth = maxWidth
+	s.previewQuality = quality
+	s.previewData = data
+	s.previewW = nw
+	s.previewH = nh
+	s.previewMu.Unlock()
+
+	return data, nw, nh, nil
 }
 
-// ClickAt forwards one left click at remote desktop coordinates.
+// ClickAt forwards one left click at remote desktop coordinates. It parks the
+// pointer at the target first: the game reads the pointer position on a frame
+// before the button event, so a bare combined click can be ignored.
 func (s *Session) ClickAt(x, y int) {
 	if x < 0 || y < 0 || x > s.cfg.Width || y > s.cfg.Height {
 		return
 	}
+	s.mouseMove(uint16(x), uint16(y))
+	time.Sleep(20 * time.Millisecond)
 	s.click(uint16(x), uint16(y))
 }
 

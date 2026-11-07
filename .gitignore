@@ -15,6 +15,9 @@
 
 # RDP control-unit build output
 /bridge/MaaRDPControlUnit/build/
+
+# Nightly packaging output
+/dist/
 /.task/
 /.maago-updates/
 /core.backup/

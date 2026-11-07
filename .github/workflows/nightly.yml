@@ -1,0 +1,481 @@
+name: Nightly
+
+on:
+  schedule:
+    # 20:00 UTC = 04:00 Asia/Shanghai. MaaCoreBuild's own nightly starts at
+    # 18:00 UTC, so this gives it a two-hour buffer.
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Build even if the source commit is unchanged"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    name: Build and publish MaaGO nightly
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for code changes
+        id: check
+        shell: pwsh
+        run: |
+          $sha = (git rev-parse HEAD).Trim()
+          $force = "${{ inputs.force }}" -eq "true"
+          $last = ""
+          $hasAsset = $false
+
+          $releaseJson = gh release view nightly --json body,assets 2>$null
+          $LASTEXITCODE = 0
+          if (-not [string]::IsNullOrWhiteSpace($releaseJson)) {
+            try {
+              $release = $releaseJson | ConvertFrom-Json
+              if ($release.body -match 'source-commit=([0-9a-fA-F]+)') {
+                $last = $Matches[1]
+              }
+              $hasAsset = @($release.assets | Where-Object {
+                $_.name -eq 'MaaGO-nightly-windows-x64.zip'
+              }).Count -gt 0
+            }
+            catch {
+              Write-Warning "Could not parse the previous nightly release: $($_.Exception.Message)"
+            }
+          }
+
+          $skip = $false
+          $reason = ""
+          if ($force) {
+            $reason = "forced by workflow_dispatch"
+          }
+          elseif (-not $last) {
+            $reason = "no previous nightly release"
+          }
+          elseif (-not $hasAsset) {
+            $reason = "previous nightly has no package asset"
+          }
+          elseif ($last -eq $sha) {
+            $skip = $true
+            $reason = "source commit unchanged ($sha)"
+          }
+          else {
+            $changed = @(git diff --name-only "$last..$sha" 2>$null)
+            if ($LASTEXITCODE -ne 0) {
+              $reason = "cannot diff against $last; building"
+            }
+            elseif ($changed.Count -eq 0) {
+              $skip = $true
+              $reason = "no net file changes"
+            }
+            else {
+              $code = @($changed | Where-Object {
+                $_ -match '^(main\.go|go\.mod|go\.sum|internal/|frontend/|bridge/|build/|scripts/|cmd/|Taskfile\.yml)'
+              })
+              if ($code.Count -eq 0) {
+                $skip = $true
+                $reason = "only docs/metadata changed"
+              }
+              else {
+                $reason = "code changes: $($code.Count) file(s)"
+              }
+            }
+          }
+
+          "skip=$($skip.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          "last=$last" >> $env:GITHUB_OUTPUT
+          "reason=$reason" >> $env:GITHUB_OUTPUT
+
+          Write-Host "commit: $sha"
+          Write-Host "last:   $last"
+          Write-Host "asset:  $hasAsset"
+          Write-Host "skip:   $skip"
+          Write-Host "reason: $reason"
+
+      - name: Skip nightly
+        if: steps.check.outputs.skip == 'true'
+        shell: pwsh
+        run: |
+          Write-Host "Nightly skipped: ${{ steps.check.outputs.reason }}"
+
+      - name: Setup Go
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Setup Node
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails v3 CLI
+        if: steps.check.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.19
+          $gobin = go env GOBIN
+          if ([string]::IsNullOrWhiteSpace($gobin)) {
+            $gobin = Join-Path (go env GOPATH) 'bin'
+          }
+          $gobin | Out-File -FilePath $env:GITHUB_PATH -Append
+          Write-Host "Wails CLI installed in $gobin"
+
+      - name: Install frontend dependencies
+        if: steps.check.outputs.skip != 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Ensure 7-Zip
+        if: steps.check.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $sevenZip = (Get-Command 7z -ErrorAction SilentlyContinue).Source
+          if (-not $sevenZip) {
+            foreach ($candidate in @(
+              'C:\Program Files\7-Zip\7z.exe',
+              'C:\Program Files (x86)\7-Zip\7z.exe'
+            )) {
+              if (Test-Path $candidate) {
+                $sevenZip = $candidate
+                break
+              }
+            }
+          }
+          if (-not $sevenZip) {
+            choco install 7zip -y --no-progress
+            $sevenZip = 'C:\Program Files\7-Zip\7z.exe'
+          }
+          if (-not (Test-Path $sevenZip)) {
+            throw "7-Zip was not found."
+          }
+          "SEVEN_ZIP=$sevenZip" >> $env:GITHUB_ENV
+          Write-Host "7-Zip: $sevenZip"
+
+      - name: Cache MaaDeps
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/cache@v4
+        with:
+          path: cache/maadeps-archive
+          key: maadeps-x64-windows-v3.0.2
+
+      - name: Build RDP control unit
+        if: steps.check.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force cache/maadeps-archive | Out-Null
+          $archive = 'cache/maadeps-archive/MaaDeps-x64-windows.tar.xz'
+          if (-not (Test-Path $archive)) {
+            Invoke-WebRequest `
+              -Uri 'https://github.com/MaaXYZ/MaaDeps/releases/download/v3.0.2/MaaDeps-x64-windows.tar.xz' `
+              -OutFile $archive
+          }
+
+          $extract = 'cache/maadeps'
+          $marker = Join-Path $extract 'vcpkg/installed/maa-x64-windows/lib/opencv_world4.lib'
+          if (-not (Test-Path $marker)) {
+            New-Item -ItemType Directory -Force $extract | Out-Null
+            & $env:SEVEN_ZIP x $archive "-o$extract" -y
+            if ($LASTEXITCODE -ne 0) { throw "Failed to extract MaaDeps xz." }
+            & $env:SEVEN_ZIP x (Join-Path $extract 'MaaDeps-x64-windows.tar') "-o$extract" -y
+            if ($LASTEXITCODE -ne 0) { throw "Failed to extract MaaDeps tar." }
+            Remove-Item (Join-Path $extract 'MaaDeps-x64-windows.tar') -Force
+          }
+
+          $openCvRoot = Join-Path (Resolve-Path $extract) 'vcpkg/installed/maa-x64-windows'
+          $generator = 'Visual Studio 17 2022'
+          if (Test-Path 'C:\Program Files\Microsoft Visual Studio\18') {
+            $generator = 'Visual Studio 18 2026'
+          }
+          .\scripts\build-rdp-controlunit.ps1 `
+            -OpenCVRoot $openCvRoot `
+            -SkipTests `
+            -Generator $generator
+
+      - name: Build MaaGO
+        if: steps.check.outputs.skip != 'true'
+        shell: pwsh
+        run: wails3 task package
+
+      - name: Assemble release package
+        if: steps.check.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{ 'User-Agent' = 'MaaGO-Nightly' }
+          if ($env:GH_TOKEN) {
+            $headers['Authorization'] = "Bearer $env:GH_TOKEN"
+          }
+          $downloadHeaders = @{ 'User-Agent' = 'MaaGO-Nightly' }
+          $root = 'dist/MaaGO'
+          Remove-Item dist -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $root | Out-Null
+
+          Copy-Item bin/MaaGO.exe (Join-Path $root 'MaaGO.exe') -Force
+
+          Write-Host "Downloading official MAA base package..."
+          $baseRelease = Invoke-RestMethod `
+            -Uri 'https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/releases/latest' `
+            -Headers $headers
+          $baseAsset = @($baseRelease.assets | Where-Object {
+            $_.name -match '^MAA-v.+-win-x64\.zip$'
+          }) | Select-Object -First 1
+          if (-not $baseAsset) { throw "No MAA win-x64 release asset found." }
+          $baseZip = 'cache/base.zip'
+          Invoke-WebRequest -Uri $baseAsset.browser_download_url -OutFile $baseZip -Headers $downloadHeaders
+          $baseExtract = 'cache/base-extract'
+          Remove-Item $baseExtract -Recurse -Force -ErrorAction SilentlyContinue
+          & $env:SEVEN_ZIP x $baseZip "-o$baseExtract" -y
+          if ($LASTEXITCODE -ne 0) { throw "Failed to extract the official MAA package." }
+          $baseCore = Get-Item (Join-Path $baseExtract 'MaaCore.dll') -ErrorAction SilentlyContinue
+          if (-not $baseCore) {
+            $baseCore = Get-ChildItem $baseExtract -Recurse -File -Filter MaaCore.dll |
+              Select-Object -First 1
+          }
+          if (-not $baseCore) { throw "MaaCore.dll not found in the official MAA package." }
+          $baseRoot = $baseCore.Directory.FullName
+          $baseTarget = Join-Path $root 'base'
+          New-Item -ItemType Directory -Force $baseTarget | Out-Null
+          Get-ChildItem -LiteralPath $baseRoot -Force | ForEach-Object {
+            Copy-Item $_.FullName $baseTarget -Recurse -Force
+          }
+          Set-Content -Path (Join-Path $baseTarget '.maago-base-version') -Value $baseRelease.tag_name -NoNewline
+
+          Write-Host "Downloading MaaCore nightly SDK..."
+          $coreRelease = Invoke-RestMethod `
+            -Uri 'https://api.github.com/repos/ksqeib/MaaCoreBuild/releases/tags/nightly' `
+            -Headers $headers
+          $coreAsset = @($coreRelease.assets | Where-Object {
+            $_.name -match '^MaaCore-sdk-windows-x64-nightly\.(zip|7z)$'
+          }) | Select-Object -First 1
+          if (-not $coreAsset) { throw "No MaaCore nightly SDK asset found." }
+          $coreZip = Join-Path 'cache' ('core' + [IO.Path]::GetExtension($coreAsset.name))
+          Invoke-WebRequest -Uri $coreAsset.browser_download_url -OutFile $coreZip -Headers $downloadHeaders
+          $coreExtract = 'cache/core-extract'
+          Remove-Item $coreExtract -Recurse -Force -ErrorAction SilentlyContinue
+          & $env:SEVEN_ZIP x $coreZip "-o$coreExtract" -y
+          if ($LASTEXITCODE -ne 0) { throw "Failed to extract the MaaCore SDK." }
+          $coreDll = Get-Item (Join-Path $coreExtract 'bin\MaaCore.dll') -ErrorAction SilentlyContinue
+          if (-not $coreDll) {
+            $coreDll = Get-ChildItem $coreExtract -Recurse -File -Filter MaaCore.dll |
+              Select-Object -First 1
+          }
+          if (-not $coreDll) { throw "MaaCore.dll not found in the MaaCore SDK." }
+          $coreRoot = $coreDll.Directory.FullName
+          $coreTarget = Join-Path $root 'core'
+          New-Item -ItemType Directory -Force $coreTarget | Out-Null
+          Copy-Item (Join-Path $coreRoot '*.dll') $coreTarget -Force
+          Copy-Item (Join-Path $coreRoot 'deps.json') $coreTarget -Force
+
+          $deps = Get-Content (Join-Path $coreTarget 'deps.json') -Raw | ConvertFrom-Json
+          $coreVersion = [string]$deps.maaCore.version
+          if ([string]::IsNullOrWhiteSpace($coreVersion)) {
+            $coreVersion = [string]$coreRelease.tag_name
+          }
+          Set-Content -Path (Join-Path $coreTarget '.maago-core-version') -Value $coreVersion -NoNewline
+
+          $runtime = $deps.runtime.'windows-x64'
+          if (-not $runtime -or -not $runtime.bundle -or -not $runtime.bundle.url) {
+            throw "deps.json has no windows-x64 runtime bundle."
+          }
+          $runtimeZip = 'cache/runtime.zip'
+          Invoke-WebRequest -Uri $runtime.bundle.url -OutFile $runtimeZip -Headers $downloadHeaders
+          if ($runtime.bundle.sha256) {
+            $actual = (Get-FileHash $runtimeZip -Algorithm SHA256).Hash.ToLower()
+            if ($actual -ne $runtime.bundle.sha256.ToLower()) {
+              throw "MaaCore runtime bundle SHA-256 mismatch."
+            }
+          }
+          $runtimeExtract = 'cache/runtime-extract'
+          Remove-Item $runtimeExtract -Recurse -Force -ErrorAction SilentlyContinue
+          & $env:SEVEN_ZIP x $runtimeZip "-o$runtimeExtract" -y
+          if ($LASTEXITCODE -ne 0) { throw "Failed to extract the MaaCore runtime bundle." }
+          $runtimeSample = Get-ChildItem $runtimeExtract -Recurse -File -Filter opencv_world4_maa.dll |
+            Select-Object -First 1
+          if (-not $runtimeSample) { throw "opencv_world4_maa.dll not found in the runtime bundle." }
+          Copy-Item (Join-Path $runtimeSample.Directory.FullName '*.dll') $coreTarget -Force
+
+          # Prefer a control unit that came with the SDK; otherwise take the
+          # official one from base/. The custom RDP DLL replaces the Win32
+          # entry point, while .official.dll stays available for local Win32.
+          $sdkWin32 = Join-Path $coreTarget 'MaaWin32ControlUnit.dll'
+          $officialWin32 = $null
+          if (Test-Path $sdkWin32) {
+            $officialWin32 = $sdkWin32
+          }
+          else {
+            $candidate = Join-Path $baseTarget 'MaaWin32ControlUnit.dll'
+            if (Test-Path $candidate) {
+              $officialWin32 = $candidate
+            }
+            else {
+              $found = Get-ChildItem $baseTarget -Recurse -File -Filter MaaWin32ControlUnit.dll |
+                Select-Object -First 1
+              if ($found) { $officialWin32 = $found.FullName }
+            }
+          }
+          if (-not $officialWin32) {
+            throw "Official MaaWin32ControlUnit.dll not found in core/ or base/."
+          }
+          Copy-Item $officialWin32 (Join-Path $coreTarget 'MaaWin32ControlUnit.official.dll') -Force
+          Copy-Item `
+            'bridge/MaaRDPControlUnit/build/Release/MaaWin32ControlUnit.dll' `
+            (Join-Path $coreTarget 'MaaWin32ControlUnit.dll') -Force
+
+          $officialAdb = Join-Path $coreTarget 'MaaAdbControlUnit.dll'
+          if (-not (Test-Path $officialAdb)) {
+            $officialAdb = Join-Path $baseTarget 'MaaAdbControlUnit.dll'
+            if (-not (Test-Path $officialAdb)) {
+              $found = Get-ChildItem $baseTarget -Recurse -File -Filter MaaAdbControlUnit.dll |
+                Select-Object -First 1
+              if ($found) { $officialAdb = $found.FullName }
+            }
+            if (Test-Path $officialAdb) {
+              Copy-Item $officialAdb (Join-Path $coreTarget 'MaaAdbControlUnit.dll') -Force
+            }
+          }
+
+          Write-Host "Downloading Android platform-tools..."
+          $adbZip = 'cache/platform-tools.zip'
+          Invoke-WebRequest `
+            -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' `
+            -OutFile $adbZip
+          $adbExtract = 'cache/platform-tools'
+          Remove-Item $adbExtract -Recurse -Force -ErrorAction SilentlyContinue
+          & $env:SEVEN_ZIP x $adbZip "-o$adbExtract" -y
+          if ($LASTEXITCODE -ne 0) { throw "Failed to extract platform-tools." }
+          $adbExe = Get-ChildItem $adbExtract -Recurse -File -Filter adb.exe | Select-Object -First 1
+          if (-not $adbExe) { throw "adb.exe not found in platform-tools." }
+          $adbTarget = Join-Path $coreTarget 'adb'
+          New-Item -ItemType Directory -Force $adbTarget | Out-Null
+          foreach ($name in @('adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll')) {
+            $source = Join-Path $adbExe.Directory.FullName $name
+            if (Test-Path $source) {
+              Copy-Item $source (Join-Path $adbTarget $name) -Force
+            }
+          }
+
+          Write-Host "Applying MaaResource overlay..."
+          $overlayZip = 'cache/overlay.zip'
+          Invoke-WebRequest `
+            -Uri 'https://codeload.github.com/MaaAssistantArknights/MaaResource/zip/refs/heads/main' `
+            -OutFile $overlayZip
+          $overlayExtract = 'cache/overlay-extract'
+          Remove-Item $overlayExtract -Recurse -Force -ErrorAction SilentlyContinue
+          & $env:SEVEN_ZIP x $overlayZip "-o$overlayExtract" -y
+          if ($LASTEXITCODE -ne 0) { throw "Failed to extract the MaaResource overlay." }
+          $overlayVersion = Get-ChildItem $overlayExtract -Recurse -File -Filter version.json |
+            Where-Object { $_.Directory.Name -eq 'resource' } |
+            Sort-Object { $_.FullName.Length } |
+            Select-Object -First 1
+          if (-not $overlayVersion) { throw "resource/version.json not found in MaaResource overlay." }
+          $overlayResource = $overlayVersion.Directory.FullName
+          $sharedResource = Join-Path $baseTarget 'resource'
+          Get-ChildItem -LiteralPath $overlayResource -Force | ForEach-Object {
+            Copy-Item $_.FullName $sharedResource -Recurse -Force
+          }
+          $overlayCommit = Invoke-RestMethod `
+            -Uri 'https://api.github.com/repos/MaaAssistantArknights/MaaResource/commits/main' `
+            -Headers $headers
+          Set-Content `
+            -Path (Join-Path $sharedResource '.maago-overlay-version') `
+            -Value $overlayCommit.sha.Substring(0, 7) -NoNewline
+
+          Copy-Item README.md (Join-Path $root 'README.md') -Force
+          Copy-Item docs (Join-Path $root 'docs') -Recurse -Force
+
+          foreach ($relative in @(
+            'MaaGO.exe',
+            'core/MaaCore.dll',
+            'core/MaaUtils.dll',
+            'core/opencv_world4_maa.dll',
+            'core/onnxruntime_maa.dll',
+            'core/DirectML.dll',
+            'core/fastdeploy_ppocr_maa.dll',
+            'core/MaaWin32ControlUnit.dll',
+            'core/MaaWin32ControlUnit.official.dll',
+            'core/adb/adb.exe',
+            'base/MaaCore.dll',
+            'base/resource/version.json'
+          )) {
+            $path = Join-Path $root $relative
+            if (-not (Test-Path $path)) {
+              throw "Package is missing $relative"
+            }
+          }
+
+          Push-Location dist
+          try {
+            & $env:SEVEN_ZIP a -tzip MaaGO-nightly-windows-x64.zip "MaaGO" -mx=5
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create the nightly archive." }
+          }
+          finally {
+            Pop-Location
+          }
+          $hash = (Get-FileHash 'dist/MaaGO-nightly-windows-x64.zip' -Algorithm SHA256).Hash.ToLower()
+          Set-Content 'dist/MaaGO-nightly-windows-x64.zip.sha256' $hash -NoNewline
+          Write-Host "Package SHA-256: $hash"
+
+          "CORE_VERSION=$coreVersion" >> $env:GITHUB_ENV
+          "BASE_VERSION=$($baseRelease.tag_name)" >> $env:GITHUB_ENV
+          "OVERLAY_VERSION=$($overlayCommit.sha.Substring(0, 7))" >> $env:GITHUB_ENV
+
+      - name: Publish nightly release
+        if: steps.check.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $notes = @"
+          MaaGO nightly build
+
+          Download MaaGO-nightly-windows-x64.zip, extract it, then run MaaGO\MaaGO.exe.
+          The package already contains core/, base/ and adb.
+
+          source-commit=${{ steps.check.outputs.sha }}
+          built-at=$([DateTime]::UtcNow.ToString('o'))
+          core-version=$env:CORE_VERSION
+          base-version=$env:BASE_VERSION
+          overlay-version=$env:OVERLAY_VERSION
+          "@
+
+          gh release view nightly *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create nightly --prerelease --title "MaaGO Nightly" --notes $notes
+          }
+
+          gh release upload nightly `
+            dist/MaaGO-nightly-windows-x64.zip `
+            dist/MaaGO-nightly-windows-x64.zip.sha256 `
+            --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to upload the nightly package."
+          }
+
+          # Update source-commit only after the asset is in place, so a failed
+          # upload cannot make the next run think the build already succeeded.
+          gh release edit nightly --prerelease --title "MaaGO Nightly" --notes $notes
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to update the nightly release notes."
+          }

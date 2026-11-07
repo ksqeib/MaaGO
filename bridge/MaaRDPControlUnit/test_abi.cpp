@@ -189,8 +189,8 @@ int main(int argc, char** argv)
                 send_bool(client, true);
                 send_u32(client, w);
                 send_u32(client, h);
-                send_u32(client, w * h * 4);
-                std::vector<uint8_t> pixels(w * h * 4, 0x7F);
+                send_u32(client, w * h * 3);
+                std::vector<uint8_t> pixels(w * h * 3, 0x7F);
                 send_all(client, pixels.data(), pixels.size());
             }
             else if (op == kOpClick) {
@@ -235,7 +235,8 @@ int main(int argc, char** argv)
     bool ok = unit->connect();
     cv::Mat image;
     ok = ok && unit->screencap(image);
-    ok = ok && image.cols == 4 && image.rows == 4 && image.type() == CV_8UC4;
+    ok = ok && image.cols == 4 && image.rows == 4 && image.type() == CV_8UC3;
+    ok = ok && image.at<cv::Vec3b>(0, 0) == cv::Vec3b(0x7F, 0x7F, 0x7F);
     ok = ok && unit->click(12, 34);
     ok = ok && unit->key_down(0x1B);
     ok = ok && unit->key_up(0x1B);

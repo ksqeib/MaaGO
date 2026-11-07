@@ -249,10 +249,12 @@ public:
             if (!read_u32(sock_, w) || !read_u32(sock_, h) || !read_u32(sock_, len)) {
                 return false;
             }
-            if (w == 0 || h == 0 || len != w * h * 4 || len > 64u * 1024 * 1024) {
+            if (w == 0 || h == 0 || len != w * h * 3 || len > 64u * 1024 * 1024) {
                 return false;
             }
-            cv::Mat frame(static_cast<int>(h), static_cast<int>(w), CV_8UC4);
+            // MaaCore expects the same 3-channel BGR image the official
+            // screencaps return (they all end with bgra_to_bgr()).
+            cv::Mat frame(static_cast<int>(h), static_cast<int>(w), CV_8UC3);
             if (frame.total() * frame.elemSize() != len) {
                 return false;
             }
