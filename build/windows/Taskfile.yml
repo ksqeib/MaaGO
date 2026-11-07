@@ -17,7 +17,7 @@ tasks:
     cmds:
       - go build {{.BUILD_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}}.exe
     vars:
-      BUILD_FLAGS: '{{if eq .PRODUCTION "true"}}-tags production -trimpath -buildvcs=false -ldflags="-H windowsgui"{{else}}-buildvcs=false -gcflags=all="-l"{{end}}'
+      BUILD_FLAGS: '{{if eq .PRODUCTION "true"}}-tags production -trimpath -buildvcs=false -ldflags="-H windowsgui"{{else}}-buildvcs=false -gcflags=all="-l" -ldflags="-H windowsgui"{{end}}'
     env:
       GOOS: windows
       CGO_ENABLED: 0

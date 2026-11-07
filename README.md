@@ -202,11 +202,15 @@ $game = "D:\Hypergryph Launcher\games\Arknights"
 ```bash
 go mod tidy
 cd frontend && npm install && cd ..
-wails3 task build
-wails3 task dev
+wails3 task build      # 本地构建，输出 bin/MaaGO.exe（无控制台窗口）
+wails3 task package    # 正式发布构建（production tag）
+wails3 task run        # 从源码运行，控制台显示日志，适合调试
+wails3 task dev        # Wails 开发模式
 ```
 
 构建产物在 `bin/MaaGO.exe`。
+
+> `task build` 生成的 EXE 使用 Windows GUI 子系统；需要看控制台日志时请用 `task run`（或 `go run . --debug`）。
 
 ## 数据位置
 

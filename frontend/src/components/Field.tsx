@@ -23,6 +23,12 @@ export const Field = ({ field, value, onChange }: FieldProps) => {
   const placeholder = field.placeholder
     ? pickText(field.placeholder, language)
     : "";
+  const fieldOptions = field.options ?? [];
+  // Two or three choices read better as a segmented control than as a
+  // dropdown; longer lists keep the compact native select.
+  const isSegmented =
+    field.type === "segmented" ||
+    (field.type === "select" && fieldOptions.length <= 3);
 
   const control = (() => {
     switch (field.type) {
@@ -49,20 +55,51 @@ export const Field = ({ field, value, onChange }: FieldProps) => {
             value={typeof value === "number" ? value : Number(value) || 0}
           />
         );
-      case "select":
+      case "segmented":
+      case "select": {
+        if (isSegmented) {
+          return (
+            <div
+              className="flex w-full gap-1 rounded-xl border border-border bg-surface-secondary/60 p-1"
+              role="radiogroup"
+            >
+              {fieldOptions.map((option) => {
+                const active = String(value ?? "") === option.value;
+                return (
+                  <button
+                    aria-checked={active}
+                    className={cn(
+                      "min-w-0 flex-1 rounded-lg px-2 py-1.5 text-center text-xs font-medium transition-colors",
+                      active
+                        ? "bg-brand-500 text-white shadow-sm"
+                        : "text-muted hover:bg-surface hover:text-foreground",
+                    )}
+                    key={option.value}
+                    onClick={() => onChange(option.value)}
+                    role="radio"
+                    type="button"
+                  >
+                    {pickText(option.label, language)}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        }
         return (
           <select
             className={cn(inputClass, "appearance-none pr-8")}
             onChange={(event) => onChange(event.target.value)}
             value={String(value ?? "")}
           >
-            {(field.options ?? []).map((option) => (
+            {fieldOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {pickText(option.label, language)}
               </option>
             ))}
           </select>
         );
+      }
       case "multiselect": {
         const selected = Array.isArray(value) ? (value as string[]) : [];
         return (
@@ -116,7 +153,8 @@ export const Field = ({ field, value, onChange }: FieldProps) => {
     }
   })();
 
-  const isWide = field.type === "multiselect" || field.type === "stage-plan";
+  const isWide =
+    field.type === "multiselect" || field.type === "stage-plan" || isSegmented;
 
   return (
     <div className={cn("flex flex-col gap-1.5", isWide && "sm:col-span-2")}>

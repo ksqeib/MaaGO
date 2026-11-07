@@ -10,7 +10,6 @@ import {
 } from "react-icons/fa";
 import { useEffect, useState } from "react";
 
-import { LogConsole } from "@/components/LogConsole";
 import { PageHeader } from "@/components/PageHeader";
 import { ProgressBar } from "@/components/ProgressBar";
 import { TaskIcon } from "@/components/TaskIcon";
@@ -36,14 +35,11 @@ export const TasksPage = () => {
   const {
     config,
     updateConfig,
-    logs,
     run,
     taskStates,
-    core,
     startQueue,
     stopQueue,
     startTask,
-    clearLogs,
     saveState,
   } = useAppStore();
 
@@ -105,7 +101,7 @@ export const TasksPage = () => {
         title={t("tasks.title")}
       />
 
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[270px_minmax(0,1fr)_360px]">
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[270px_minmax(0,1fr)]">
         {/* Queue */}
         <section className="launcher-glass flex min-h-0 flex-col rounded-3xl">
           <header className="flex items-center justify-between border-b border-border/70 px-3 py-2.5">
@@ -250,6 +246,17 @@ export const TasksPage = () => {
           </div>
 
           <div className="border-t border-border/70 p-2">
+            <div className="mb-2 flex items-center justify-between gap-2 text-[10px] text-muted">
+              <span className="truncate">
+                {running
+                  ? run.currentTaskName || t("dashboard.no_current_task")
+                  : t(`status.${run.status}`)}
+              </span>
+              <span className="shrink-0">
+                {run.completed}/{run.total || config.tasks.filter((task) => task.enabled).length}
+              </span>
+            </div>
+            <ProgressBar className="mb-2" value={run.progress} />
             <button
               className={cn(
                 "flex w-full items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold transition-colors",
@@ -297,63 +304,6 @@ export const TasksPage = () => {
               {t("tasks.select_task")}
             </div>
           )}
-        </section>
-
-        {/* Logs */}
-        <section className="launcher-glass flex min-h-0 flex-col overflow-hidden rounded-3xl">
-          <header className="border-b border-border/70 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                    run.status === "running"
-                      ? "bg-sky-500/15 text-sky-600 dark:text-sky-400"
-                      : run.status === "success"
-                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                        : run.status === "failed"
-                          ? "bg-red-500/15 text-red-600 dark:text-red-400"
-                          : "bg-surface-secondary text-muted",
-                  )}
-                >
-                  {t(`status.${run.status}`)}
-                </span>
-                <span className="text-xs text-muted">
-                  {run.completed}/{run.total || config.tasks.filter((task) => task.enabled).length}
-                </span>
-              </div>
-              <button
-                className="text-[11px] text-muted hover:text-foreground"
-                onClick={clearLogs}
-                type="button"
-              >
-                {t("tasks.clear_logs")}
-              </button>
-            </div>
-            <p className="mt-1 truncate text-xs font-medium">
-              {run.currentTaskName || t("dashboard.no_current_task")}
-            </p>
-            <ProgressBar className="mt-2" value={run.progress} />
-          </header>
-
-          <div
-            className={cn(
-              "flex items-start gap-2 px-3 py-2 text-[10px] leading-relaxed",
-              core?.demo
-                ? "border-b border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                : "border-b border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-            )}
-          >
-            {core?.demo
-              ? t("tasks.demo_warning")
-              : `${t("tasks.core_ready")}${core?.version ? ` · ${core.version}` : ""}`}
-          </div>
-
-          <LogConsole
-            className="min-h-0 flex-1"
-            emptyText={t("dashboard.no_logs")}
-            logs={logs.slice(-300)}
-          />
         </section>
       </div>
     </div>

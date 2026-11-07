@@ -491,6 +491,11 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 			r.SystemLogCoreExtra("info", details)
 
 		case maa.MsgConnectionInfo:
+			// MaaCore reports screencap timing every few seconds. Drop the
+			// routine samples; failures and slow screenshots are kept below.
+			if details.What == "ScreencapCost" && !shouldReportScreencapCost(details.Details) {
+				break
+			}
 			level := "info"
 			text := "连接信息"
 			switch details.What {
@@ -515,6 +520,8 @@ func (r *Runner) runCore(ctx context.Context, tasks []config.TaskConfig, cfg con
 			case "ResolutionGot":
 				text = "已获取设备分辨率"
 			case "ScreencapCost":
+				// Only failures or slow screenshots reach this point.
+				level = "warn"
 				text = "截图耗时信息"
 			case "FastestWayToScreencap":
 				text = "截图方式信息"

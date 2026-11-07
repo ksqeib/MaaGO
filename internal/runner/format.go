@@ -282,6 +282,29 @@ func objectsOf(value any) []map[string]any {
 	return result
 }
 
+// Routine screencap timing is emitted every few seconds and drowns out the
+// useful lines. Keep it only when the screenshot path is actually unhealthy.
+const (
+	screencapSlowAverageMS = 500
+	screencapSlowMaxMS     = 1000
+)
+
+// shouldReportScreencapCost keeps failures and slow screenshots while
+// suppressing the normal per-interval averages.
+func shouldReportScreencapCost(raw json.RawMessage) bool {
+	var payload struct {
+		Average    int `json:"avg"`
+		Max        int `json:"max"`
+		FaultTimes int `json:"fault_times"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return false
+	}
+	return payload.FaultTimes > 0 ||
+		payload.Average >= screencapSlowAverageMS ||
+		payload.Max >= screencapSlowMaxMS
+}
+
 // formatConnection renders ConnectionInfo payloads.
 func formatConnection(what string, raw json.RawMessage, why string) string {
 	var payload map[string]any

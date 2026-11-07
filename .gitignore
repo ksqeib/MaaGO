@@ -16,15 +16,6 @@
 /.maago-updates/
 /core.backup/
 
-# MaaCore runtime binaries (see core/README.md)
-/core/*.dll
-/core/adb/
-/core/resource/
-/core/debug/
-/core/cache/
-/core/.maago-core-version
-/resource/
-
 # Editor / OS
 .DS_Store
 Thumbs.db
@@ -36,3 +27,7 @@ Thumbs.db
 
 # Local configuration
 /config.json
+
+# MaaCore runtime binaries (see core/README.md)
+base/
+core/

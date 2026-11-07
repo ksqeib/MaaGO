@@ -13,7 +13,6 @@ import {
 } from "react-icons/fa";
 import { useState } from "react";
 
-import { LogConsole } from "@/components/LogConsole";
 import { PageHeader } from "@/components/PageHeader";
 import { ProgressBar } from "@/components/ProgressBar";
 import { RDPPreviewCard } from "@/components/RDPPreviewCard";
@@ -53,7 +52,6 @@ export const DashboardPage = () => {
     config,
     updateConfig,
     run,
-    logs,
     taskStates,
     schedule,
     core,
@@ -61,7 +59,6 @@ export const DashboardPage = () => {
     stopQueue,
     diagnoseConnection,
     detectConnection,
-    openLogsDir,
   } = useAppStore();
 
   const language = i18n.resolvedLanguage;
@@ -451,30 +448,6 @@ export const DashboardPage = () => {
                   : core?.message || t("settings.core.demo")}
               </p>
             </div>
-          </section>
-
-          {/* Recent logs */}
-          <section className="launcher-glass flex h-[260px] flex-col overflow-hidden rounded-3xl lg:col-span-3">
-            <div className="flex items-center justify-between border-b border-border/70 px-4 py-2.5">
-              <h2 className="text-sm font-bold">{t("dashboard.logs_title")}</h2>
-              <div className="flex items-center gap-2 text-[11px]">
-                <button
-                  className="text-muted hover:text-foreground"
-                  onClick={openLogsDir}
-                  type="button"
-                >
-                  {t("logs.open_dir")}
-                </button>
-                <Link className="font-medium text-brand-600 dark:text-brand-400" to={ROUTES.logs}>
-                  {t("dashboard.open_logs")}
-                </Link>
-              </div>
-            </div>
-            <LogConsole
-              className="min-h-0 flex-1"
-              emptyText={t("dashboard.no_logs")}
-              logs={logs.slice(-80)}
-            />
           </section>
         </div>
       </div>

@@ -2,7 +2,14 @@ import type { LocalizedText, TaskConfig, TaskType } from "@/types/maa";
 
 export type TaskIcon = "rocket" | "swords" | "factory" | "users" | "shopping" | "gift" | "update";
 
-export type FieldType = "switch" | "text" | "number" | "select" | "multiselect" | "stage-plan";
+export type FieldType =
+  | "switch"
+  | "text"
+  | "number"
+  | "select"
+  | "segmented"
+  | "multiselect"
+  | "stage-plan";
 
 export interface FieldOption {
   value: string;
@@ -177,7 +184,7 @@ export const TASK_META: TaskMeta[] = [
     fields: [
       {
         key: "mode",
-        type: "select",
+        type: "segmented",
         label: { zh: "基建模式", en: "Mode" },
         options: [
           { value: "default", label: { zh: "常规模式", en: "Default" } },

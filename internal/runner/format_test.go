@@ -98,3 +98,22 @@ func TestFormatConnection(t *testing.T) {
 		t.Errorf("nested json not rendered: %q", got)
 	}
 }
+
+func TestShouldReportScreencapCost(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{"routine", `{"avg":215,"max":238,"min":185}`, false},
+		{"fault", `{"avg":120,"max":180,"min":90,"fault_times":1}`, true},
+		{"slow average", `{"avg":640,"max":900,"min":500}`, true},
+		{"slow spike", `{"avg":240,"max":1200,"min":180}`, true},
+		{"invalid", `not-json`, false},
+	}
+	for _, testCase := range cases {
+		if got := shouldReportScreencapCost(json.RawMessage(testCase.raw)); got != testCase.want {
+			t.Errorf("%s: got %v, want %v", testCase.name, got, testCase.want)
+		}
+	}
+}
